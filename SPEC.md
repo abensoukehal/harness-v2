@@ -71,6 +71,8 @@ client    → the client's stacks (their repos). Receives feature code only.
 
 **Nothing resolves a path from the working directory.** Every tool takes the workspace root as an explicit argument or reads it from `HARNESS_WORKSPACE`, and refuses when it has neither. An agent's environment block names the directory its session started in, which is not the workspace, and an agent told in prose to "run from the workspace root" will `cd` to the wrong one and exit 127. That failure took three launches of the dry run and it is not fixable by rewording the instruction. The rule is pillar one again: a location that must be correct is passed, not described.
 
+**This applies to agents, not only to tools.** Every path an agent needs is in its briefing, absolute and resolved by the caller. The rule held everywhere it was implemented and failed in the one place it was not: a verify agent ran its checks in the workspace root instead of the clone it was reviewing, and reported a green tree as failed. An agent that has to work out where it is will work it out wrong.
+
 Claude Code loads workflows, agents and skills from `.claude/` in the working directory. The harness repo ships them under `harness/claude/{workflows,agents,skills}`. The workspace's `.claude/` links to those. A `harness/bin/link` script creates the links. Updating the harness = `git pull` in `harness/` and `/reload-skills`.
 
 No `CLAUDE.md` inside any client repo. Ever.
@@ -244,7 +246,7 @@ In v1 a silent spec produced a stop, and the run waited for Ali. In v2 the build
 ### Phase 3: Safety net
 
 Work:
-- **Run the client's own test suite first**, if they have one, on the untouched base branch. Record **the failing tests by name** in `state.json` as the inherited baseline. A directory name is not a baseline: the whole purpose is to tell, at QA, which red is the client's and which is ours, and `["tests"]` cannot answer that. Nothing in it is fixed and nothing in it blocks the run, but a test that was green at the start and is red at the end is a regression the harness caused. This is the only coverage of code outside the map, which is where legacy breaks.
+- **Run the client's own test suite first**, if they have one, on the untouched base branch. Record **the failing tests by name** in `state.json` as the inherited baseline. A suite that fails to execute at all — a module error, a missing runner, a bad command — yields no baseline and is not recorded as one failing test named after a directory. That is a BLOCKED run with `reason: environment` at phase 3, because without a baseline the QA diff cannot tell the client's red from ours, which is the entire point of the phase. Parse the runner's output strictly enough to reject its own header lines. A directory name is not a baseline: the whole purpose is to tell, at QA, which red is the client's and which is ours, and `["tests"]` cannot answer that. Nothing in it is fixed and nothing in it blocks the run, but a test that was green at the start and is red at the end is a regression the harness caused. This is the only coverage of code outside the map, which is where legacy breaks.
 - For every zone in the code map, write regression tests in `product/tests/` that pin current behaviour. Backend: unit/integration on existing endpoints and services. Frontend: Playwright on existing flows in the touched screens.
 - Run them on the untouched code. A test that fails here was written wrong, and the test-writer fixes it **in this phase only**.
 - **Prove the net is not vacuous.** For each zone, break the behaviour the test pins (change a return value, a status code, a rendered field), confirm at least one test goes red, restore. A zone where nothing goes red has no net, and the test-writer rewrites it before the phase can exit. A test suite that cannot fail proves nothing, and an agent writing its own tests produces those by default.
@@ -280,11 +282,13 @@ Not a human-style code review. The worker rereads its own diff hunting for: edge
 
 ### Phase 5: Global QA
 
-After all sub-tasks:
+**QA does not run when no sub-task landed.** With nothing built, the journey fails at step one, the fix budget is spent re-running against absent code, and the phase produces the appearance of verification over an empty branch. Zero completed sub-tasks skips straight to the report.
+
+After at least one sub-task lands:
 - Execute `journey.md` end to end against the running stacks. This is a script written at plan time and approved with the plan, not an improvisation from the spec.
 - Run the complete safety net plus all sub-task criteria.
 - Rerun the client's own suite and diff against the inherited baseline. Anything that went from green to red is a regression, and it is fixed before delivery. Anything red at the start stays out of scope.
-- Run visual diff on every screen in the design.
+- Run visual diff on every screen in the design, **unless `design.comparable` is false**, in which case no screen is captured and the report says so once. The flag reached the planner and not the QA prompt, so a run that correctly planned no visual criterion still opened headless Chrome and reported a visual gap against a wireframe. A flag that only one phase reads is a flag that lies to the other.
 - Fix what fails, same 3-attempt rule per failure, **within a phase budget**: `qa.max_fixes` from the config, default 10. QA is the phase that concludes, not a second build, and an unbounded fix loop after the build is already done is where a run's remaining budget disappears.
 - At the cap, stop fixing. Deliver with every remaining failure documented in the end report as a known gap, with what was tried. A branch with three named defects is worth more to Ali than a run that spent its night on the fourth.
 
@@ -510,6 +514,8 @@ All tests live in `product/tests/`. They import the client code by path. Test de
 
 One routine, driven by config:
 
+**Delivery requires something to deliver.** No push, no merge, and `delivered` stays false unless at least one sub-task is done and the branch diff against `base_branch` is non-empty. A run that completed nothing pushed an empty branch, recorded `delivered: true` and reported "done with gaps, open a PR" — a false green produced by counting only *blocked* sub-tasks against success. Skipped counts too: any sub-task not done means the status is `partial` at best, and zero done means `nothing landed`, whatever the reason was.
+
 - Create `${branch_prefix}<slug>` from `base_branch` at run start.
 - One commit per validated sub-task (section 9.2).
 - At the end of phase 5:
@@ -617,6 +623,10 @@ Next.                      the branch to open a PR on, or what needs deciding fi
 
 Detail: <paths to plan.md, decisions.md, state.json, gaps/>
 ```
+
+Each assumption is **one line of plain words**: the decision taken, not the code that implements it. Gap entries carry the full reasoning and it stays in `spec-gaps.md`, where Ali reads it when he wants it. Recording the answer alongside the question fixed a real defect and then filled the report with DOM selectors, query strings and file paths above the `Detail:` line, which is the same failure as the one section 13 forbids: a message nobody can act on from a phone.
+
+`Detail:` paths are workspace-relative. An absolute path into a session scratchpad is meaningless on the device the message is read on.
 
 Same rule as section 13: everything technical lives on the `Detail:` line. The report ends with what happened, never with a question about whether to continue.
 
@@ -726,6 +736,8 @@ Two files the harness maintains so a conversation about the harness can start wi
 ## 17. Open decisions (v1 defaults, revisit in retro)
 
 - Reviewer as separate agent vs second prompt to the same worker. v1: separate agent (cleaner adversarial stance, costs one extra spawn).
+- **Cost is scoped to the run, not to the session folder.** Two dry runs of the same feature shared a session directory and the cost log summed both, reporting 15.4M tokens for a run that spent 6.3M. A budget check reading that number fires on the wrong run and the retro compares against a median built from double-counted history.
+- **A friction records the error that caused it.** The runtime-refusal path fired ten times and wrote frictions with no error text; the cause sat in the session log instead. A friction whose message is only that something was refused tells the retro nothing it can act on.
 - **Measure input tokens, not just output.** The dry run spent 1.74M input tokens against 27k output on a single agent. A cost log built from output deltas measures the cheap half and reports a run that burned a window as nearly free, which makes pillar four unenforceable.
 - Criteria runner model. v1: session model; try a smaller one in a later feature.
 - Visual region mapping: hand-made regions file vs derived from Figma node tree. v1: hand-made, exported with the design.
