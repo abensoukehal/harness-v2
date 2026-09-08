@@ -109,12 +109,29 @@ stacks:
       lint: ruff check .
     dev_url: http://localhost:${PORT_BACKEND}
     logs: stdout            # or a file path, or a docker container name
-    depends_on: [db]        # start order
+    depends_on: [db]        # start order; every name here must be a declared stack; every name here must be a declared stack
     health:                 # ready means this passes, not that the process exists
       http: ${PORT_BACKEND}/healthz
       expect_status: 200
     health_timeout_s: 180
     seed: python manage.py loaddata fixtures/seed.json
+  db:                       # infrastructure is a stack. Anything the run starts,
+    repo: null                # waits for, or tears down is declared here, or it cannot
+    path: null                # be a start-order dependency
+    commands:
+      dev: docker compose up -d postgres
+    health:
+      http: null
+      tcp: ${PORT_DB}
+    health_timeout_s: 60
+  db:                       # infrastructure is a stack. Anything the run starts,
+    repo: null                # waits for, or tears down is declared here, or it
+    path: null                # cannot be a start-order dependency
+    commands:
+      dev: docker compose up -d postgres
+    health:
+      tcp: ${PORT_DB}
+    health_timeout_s: 60
   # mobile, ai: same shape, optional
 
 delivery:
@@ -142,6 +159,14 @@ test_runner:
   # how Ali's tests (product/tests) import and run against the client checkouts
   frontend: playwright      # e2e via browser
   backend: pytest --rootdir=product/tests/backend
+```
+
+Required per stack: `commands.dev`, `health`, `health_timeout_s`. Phases 4 and 5 need every stack running and need to know when it is ready, so a stack missing any of the three fails validation instead of failing at hour two.
+
+`repo` and `path` are null only for a stack the harness starts but never edits, such as a database container.
+
+Validation runs in two passes: schema first, then cross-field checks (paths under their declared repo, `depends_on` names exist and do not cycle, `${PORT_*}` references resolve, test keys are declared stacks, worktree paths match `.worktrees/<feature>/<repo>`). Cross-field checks only run once the schema pass is clean, so a badly broken file takes two rounds to fully diagnose. That is the right order, and the validator says which pass it is reporting.
+
 
 budget:
   tokens_per_feature: 2000000   # overrun is a harness defect, not a stop
@@ -387,9 +412,15 @@ Which agents get activated is decided by which stacks appear in the plan. A clie
   "ports": { "frontend": 51023, "backend": 51024 },
   "phase": "build",
   "subtasks": [
-    { "id": "st-01", "stack": "backend", "status": "done", "commit": "<sha>", "files": [], "attempts": 1 },
-    { "id": "st-02", "stack": "frontend", "status": "blocked", "reason": "...", "attempts": 3 }
+    { "id": "st-01", "stack": "backend", "status": "done", "commit": "<sha>",
+      "files": [], "worktree": ".worktrees/checkout-coupons/backend",
+      "exit_criteria": [ { "kind": "test", "run": "...", "expect": "..." } ],
+      "attempts": 1, "interruptions": 0,
+      "cost": { "tokens_in": 0, "tokens_out": 0, "duration_s": 0, "lines_added": 0 } },
+    { "id": "st-02", "stack": "frontend", "status": "blocked", "reason": "oracle",
+      "attempts": 3, "interruptions": 0 }
   ],
+  "client_test_baseline": { "backend": ["<already red at start>"] },
   "decisions": ["..."],
   "frictions": ["..."],
   "accepted_gaps": []
@@ -399,6 +430,9 @@ Which agents get activated is decided by which stacks appear in the plan. A clie
 Rules:
 - Updated after every sub-task, and again at every phase boundary.
 - `harness_commit` is mandatory. The retro needs it.
+- **Exit criteria live here in full, not as a reference to `plan.md`.** Section 4.1 forbids re-parsing the plan mid-run, so a resumed run that only held a pointer would have nothing to verify against.
+- **No timestamps anywhere.** Durations only (`duration_s`, `wall_time_s`). A date in machine state fails the hygiene check for a reason that has nothing to do with the run.
+- **Two counters, not one.** `attempts` counts criterion failures and caps at 3 (section 5.4). `interruptions` counts crashes on the same sub-task and caps at 3 independently (section 8.3). A run that died twice has spent no attempts.
 
 ### 8.1 Starting a feature
 
@@ -614,7 +648,7 @@ The retro edits the engine with no human review, and its own tests only cover me
 - Below three runs in the workspace there is no baseline and no comparison. The retro says so in one line rather than reasoning from one data point.
 - A run more than 50% worse on any of those, with no matching growth in feature size, is a **suspected regression**. The retro does not decide it caused it. It writes the finding at the top of `retro.md`, names the harness commits in that window, and appends to `OPEN_QUESTIONS.md`.
 - `harness/bin/rollback [<tag>]` resets the engine to the previous retro tag, defaulting to the last one. Ali runs it. Rolling back is a revert commit, never a force-push, so no other workspace loses history.
-- A rolled-back change is not retried silently. It goes to `OPEN_QUESTIONS.md` with what it was trying to fix, so the friction survives even though the fix did not.
+- A rolled-back change is not retried silently. It goes to `harness/OPEN_QUESTIONS.md`, which the retro creates on first use and never on bootstrap. An empty file that exists is a file every agent loads for nothing. It goes there with what it was trying to fix, so the friction survives even though the fix did not.
 
 ### 14.6 Harness tests
 
@@ -704,6 +738,9 @@ Two files the harness maintains so a conversation about the harness can start wi
 - An edited `plan.md` changes what the build does; a malformed one fails at launch with the offending line quoted.
 - A retro commit naming a client, repo or service is refused by `hygiene.sh`.
 - Phase 5 runs `journey.md`, and a feature with no journey fails planning.
+- `hygiene.sh` passes on a repo whose `CLAUDE.md` states the hygiene rules in plain words.
+- A `depends_on` naming something that is not a declared stack fails validation.
+- A resumed run verifies its sub-tasks against criteria held in `state.json`, with `plan.md` untouched.
 - `harness/tests/hygiene.sh` green on the harness's own files and on the product layer.
 - Total harness instruction text under 40,000 characters.
 - Harness test suite green.
@@ -718,9 +755,18 @@ v1 already carried the rule. `loop-economy.md` rule 3 says history belongs in th
 
 So it is a test, not an instruction:
 
-- `harness/tests/hygiene.sh` greps every harness-owned file for: a date, a ticket id, and the words `superseded`, `retired`, `deprecated`, `used to`, `previously`, `no longer`, `before <id>`, `as of`.
+- `harness/tests/hygiene.sh` greps harness-owned prose for: a date, a ticket id, and the words `superseded`, `retired`, `deprecated`, `used to`, `previously`, `no longer`, `before <id>`, `as of`.
 - Any hit fails. The retro cannot commit a failing tree.
 - The check is a grep, never an agent judgement. An agent asked to assess its own writing will always find a reason the sentence is load-bearing.
+
+**Scope.** A word list that cannot be written down anywhere makes its own rule unstateable, and the first build hit this: the file defining the rule had to avoid its own vocabulary.
+
+- The check covers prose files: `CLAUDE.md`, agent files, skills, `conventions.md`, `code-map/`, `OPEN_QUESTIONS.md`.
+- It does not cover file paths, code, schemas, fixtures or machine state. A path is not prose.
+- Exactly one file is exempt: `hygiene.sh` itself, which has to name what it forbids. The exemption is a hardcoded path, not a marker other files can adopt.
+- Machine state carries durations, never timestamps, so `state.json` has nothing for the date grep to find. This is a real constraint on section 8, not a coincidence.
+
+**The spec file is `SPEC.md`.** A version number in a filename is the same accretion in a different place, and every file referencing it inherits it.
 
 ### 20.2 Edit the rule, never stack a new one on top
 
