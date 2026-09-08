@@ -72,6 +72,7 @@
         "files": { "type": "array", "items": { "type": "string" } },
         "depends_on": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/subtaskId" } },
         "line_budget": { "type": "integer", "minimum": 0 },
+        "token_budget": { "type": "integer", "minimum": 1 },
         "exit_criteria": { "type": "array", "items": { "$ref": "#/$defs/criterion" } },
         "tokens_in": { "$ref": "#/$defs/count" },
         "tokens_out": { "$ref": "#/$defs/count" },
