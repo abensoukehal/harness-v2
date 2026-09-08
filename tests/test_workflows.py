@@ -34,6 +34,8 @@ class Workflows(unittest.TestCase):
     def test_build_is_mechanical_where_it_matters(self):
         text = (ROOT / "claude/workflows/harness-build.js").read_text()
         self.assertLess(text.index("${T('net')} check"), text.index("${T(resuming ? 'resume' : 'up')}"))
+        self.assertLess(text.index("${T('baseline')}"), text.index("agentType: 'test-writer'"), "the baseline is a tool, run before the test-writer")
+        self.assertNotIn("baseline:", text.split("const NET")[1].split("}")[0], "the test-writer does not report the baseline")
         self.assertLess(text.index("${T('net')} freeze"), text.index("${T('next')}"))
         self.assertLess(text.index("${T('report')}"), text.index("${T('notify')} ${slug} run_finished"))
         self.assertIn("--reseed", text)

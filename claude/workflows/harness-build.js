@@ -42,11 +42,10 @@ const STATE = { type: 'object', properties: { state: { type: 'object' } }, requi
 const NET = {
   type: 'object',
   properties: {
-    baseline: { type: 'object' },
     zones: { type: 'array', items: { type: 'object', properties: { zone: { type: 'string' }, mutation_red: { type: 'boolean' } }, required: ['zone', 'mutation_red'] } },
     report: { type: 'string' },
   },
-  required: ['baseline', 'zones'],
+  required: ['zones'],
 }
 const strings = { type: 'array', items: { type: 'string' } }
 const REVIEW = {
@@ -118,13 +117,15 @@ try {
   if (state.subtasks.every((s) => s.status === 'done')) {
     log('every sub-task is done: safety net skipped')
   } else {
+    const base = await io(`Run \`${T('baseline')} ${slug}\`; ok by exit code; output = stdout and stderr.`, { label: 'client baseline' })
+    if (!base || !base.ok) throw new Error(`client baseline could not be recorded: ${base && (base.error || base.output)}`)
+    log(`client baseline: ${(base.output || '').split('\n').filter(Boolean).join('; ')}`)
     const net = await agent(
-      `Workspace root: ${WS}. Feature ${slug}. Follow your Method on ${FEATURE}. Zones come from ${WS}/product/code-map/. Return baseline per stack, every zone with mutation_red, and a report under ten lines.`,
+      `Workspace root: ${WS}. Feature ${slug}. Follow your Method on ${FEATURE}. Zones come from ${WS}/product/code-map/. Return every zone with mutation_red, and a report under ten lines.`,
       { agentType: 'test-writer', label: 'safety net', schema: NET, ...model('worker') })
     if (!net) throw new Error('test-writer returned nothing')
     const vacuous = net.zones.filter((z) => !z.mutation_red).map((z) => z.zone)
     if (vacuous.length) throw new Error(`safety net is vacuous for ${vacuous.join(', ')}: nothing went red under mutation`)
-    await update({ client_test_baseline: net.baseline })
     const frozen = await io(`Run \`${T('net')} freeze ${slug}\`; ok by exit code; output = stdout and stderr.`, { label: 'net freeze' })
     if (!frozen || !frozen.ok) throw new Error(`safety net could not be frozen: ${frozen && (frozen.error || frozen.output)}`)
     await update({ phase: 'build' })
