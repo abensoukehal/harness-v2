@@ -41,7 +41,7 @@ scan() {  # scan <rule> <regex> <grep flags> <files...>
 harness_files=()
 while IFS= read -r -d '' f; do harness_files+=("$f"); done < <(
   find "$harness" -type f ! -path '*/.git/*' ! -path '*/node_modules/*' ! -name package-lock.json \
-       ! -name harness-v2-spec.md ! -name hygiene.sh ! -name .DS_Store -print0)
+       ! -name SPEC.md ! -name hygiene.sh ! -name .DS_Store -print0)
 scan date   "$date_rx"   "" "${harness_files[@]}"
 scan ticket "$ticket_rx" "" "${harness_files[@]}"
 scan words  "$words_rx"  -i "${harness_files[@]}"
