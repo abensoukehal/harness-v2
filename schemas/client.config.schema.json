@@ -89,6 +89,12 @@
         "max_attempts": { "type": "integer", "minimum": 1, "default": 4 }
       }
     },
+    "design": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["comparable"],
+      "properties": { "comparable": { "type": "boolean" } }
+    },
     "max_parallel_features": { "type": "integer", "minimum": 1, "default": 2 },
     "models": {
       "type": "object",

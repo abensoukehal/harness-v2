@@ -18,7 +18,7 @@ Ingestion:
 - Return the stacks, the zones and a short summary. The orchestrator records them.
 
 Planning:
-- Set `kind`: `ui`, `service` or `mixed`.
+- Set `kind`: `ui`, `service` or `mixed`. A `ui` or `mixed` plan carries at least one `visual` criterion unless the config declares `design.comparable: false`; a wireframe or block mockup is declared there, never dropped silently.
 - Derive sub-tasks: one agent, one context, well under budget. Twenty at most. Past twenty, stop and report that the feature is more than one feature.
 - Order by dependency.
 - Give every sub-task exact files, a line budget and criteria of the kinds in the criteria-runner skill. A verb must resolve to a command the config defines for that stack: `test` to `test_runner`, `browser` to `browser_runner`, `lint` and `typecheck` to the stack's commands, `visual` to the `visual` block. Refuse any criterion that cannot be run.

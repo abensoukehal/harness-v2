@@ -64,7 +64,10 @@ def build_report(ws, slug):
     lines += ["", "Assumptions I made."]
     gaps = folder / "spec-gaps.md"
     entries = parse_gaps(gaps.read_text()) if gaps.exists() else []
-    lines += ["- %s %s" % (e["question"], e["assumed"]) for e in entries] or ["None recorded."]
+    assumptions = ["- %s %s" % (e["question"], e["assumed"]) for e in entries]
+    if state["kind"] != "service" and cfg.get("design", {}).get("comparable", True) is False:
+        assumptions.append("- The design cannot be compared pixel for pixel, as the config declares, so no visual check ran.")
+    lines += assumptions or ["None recorded."]
     tokens = sum(s.get("cost", {}).get("tokens_in", 0) + s.get("cost", {}).get("tokens_out", 0) for s in state["subtasks"])
     attempts = sum(s["attempts"] for s in state["subtasks"])
     wall = state.get("wall_time_s", 0)

@@ -87,6 +87,12 @@ class Report(unittest.TestCase):
         save_state(self.ws, "hello", state)
         text = run("report", "hello", ws=self.ws).stdout
         self.assertIn("What works now.\nNothing landed yet.\n\nWhat didn't land.\nNothing was planned.\n", text)
+        with open(self.ws / "product/client.config.yaml", "a") as f:
+            f.write("design:\n  comparable: false\n")
+        self.assertNotIn("pixel for pixel", run("report", "hello", ws=self.ws).stdout, "a service feature has no design")
+        state["kind"] = "mixed"
+        save_state(self.ws, "hello", state)
+        self.assertIn("- The design cannot be compared pixel for pixel, as the config declares, so no visual check ran.", run("report", "hello", ws=self.ws).stdout)
 
     def test_partial_when_not_delivered_and_median_after_three_runs(self):
         state = load_state(self.ws, "hello")

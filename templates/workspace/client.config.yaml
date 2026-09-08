@@ -88,4 +88,7 @@ visual:
   viewport: 1440x900
   max_attempts: 4
 
+design:
+  comparable: true            # false for wireframes and block mockups: no visual criterion, recorded as a gap
+
 max_parallel_features: 2

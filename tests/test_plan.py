@@ -132,6 +132,29 @@ class Plan(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(json.loads(done.stdout)["gaps"], [{"question": "Which delimiter wins", "assumed": "comma, the common case", "affects": "st-01"}])
 
+    def test_a_screen_feature_without_a_visual_check_is_refused_unless_declared(self):
+        config = self.ws / "product/client.config.yaml"
+        original = config.read_text()
+        ui = PLAN.replace("kind: service", "kind: mixed")
+        done = plan(self.ws, ui)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertTrue(json.loads(done.stdout)["comparable"])
+        without = ui.replace("- visual export-button design/orders.png\n", "")
+        done = plan(self.ws, without)
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("kind mixed activates the visual diff and no sub-task carries a visual criterion", done.stderr)
+        self.assertIn("design.comparable: false", done.stderr)
+        self.assertEqual(plan(self.ws, without.replace("kind: mixed", "kind: service")).returncode, 0, "a service feature has no screen to compare")
+        config.write_text(original + "design:\n  comparable: false\n")
+        done = plan(self.ws, without)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertFalse(json.loads(done.stdout)["comparable"])
+        done = plan(self.ws, ui)
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("design.comparable: false, so nothing can be compared against", done.stderr)
+        self.assertIn("\n  - visual export-button", done.stderr)
+        config.write_text(original)
+
     def test_twenty_one_subtasks_refused(self):
         blocks = "".join("\n## st-%02d · Step %d\nstack: api\nfiles: a.py\ndepends_on: none\nline_budget: 1\ncriteria:\n- lint\n" % (i, i) for i in range(1, 22))
         done = plan(self.ws, "# hello\nkind: service\n" + blocks)

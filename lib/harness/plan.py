@@ -86,6 +86,7 @@ def parse(text, cfg, slug=None):
     if kind is None:
         fail(subtasks[0]["_line"], "missing 'kind: ui | service | mixed' before the first sub-task")
 
+    comparable = cfg.get("design", {}).get("comparable", True)
     out, seen = [], []
     for st in subtasks:
         for key in REQUIRED:
@@ -112,16 +113,20 @@ def parse(text, cfg, slug=None):
             fail(i, "line_budget must be a whole number")
         if not st["_criteria"]:
             fail(st["_line"], "sub-task has no criterion")
-        criteria = [criterion(i, text, cfg, stack, fail) for i, text in st["_criteria"]]
+        criteria = [criterion(i, text, cfg, stack, fail, comparable) for i, text in st["_criteria"]]
         out.append({"id": st["id"], "stack": stack, "goal": st["goal"], "files": files, "depends_on": deps,
                     "line_budget": int(budget), "exit_criteria": criteria, "status": "pending", "attempts": 0,
                     "interruptions": 0, "worktree": ".worktrees/%s/%s" % (slug, stacks[stack]["repo"]),
                     "role": role_of(stack, stacks[stack])})
         seen.append(st["id"])
-    return {"kind": kind, "subtasks": out}
+    # A kind that activates the visual diff and a plan without one must disagree loudly (4.0, 5.3); only a declared
+    # design.comparable: false in the config lets a screen feature skip it.
+    if kind in ("ui", "mixed") and comparable and not any(c["kind"] == "visual" for s in out for c in s["exit_criteria"]):
+        fail(subtasks[0]["_line"], "kind %s activates the visual diff and no sub-task carries a visual criterion; add one or declare design.comparable: false in the config" % kind)
+    return {"kind": kind, "subtasks": out, "comparable": comparable}
 
 
-def criterion(i, text, cfg, stack, fail):
+def criterion(i, text, cfg, stack, fail, comparable=True):
     """One criterion line. Its verb must resolve to a command the config defines for this stack (4.1), or the plan is refused here."""
     stacks = cfg["stacks"]
     parts = text.split()
@@ -142,6 +147,8 @@ def criterion(i, text, cfg, stack, fail):
         return {"kind": kind}
     if kind == "visual" and len(rest) == 2:
         needs("threshold_pct", "visual", cfg.get("visual"))
+        if not comparable:
+            fail(i, "the config declares design.comparable: false, so nothing can be compared against")
         return {"kind": "visual", "region": rest[0], "reference": rest[1]}
     if kind == "http" and len(rest) >= 3:
         method, url, status = rest[0].upper(), rest[1], rest[2]
