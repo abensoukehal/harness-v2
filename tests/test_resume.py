@@ -42,6 +42,8 @@ class Resume(unittest.TestCase):
             dict(id="st-02", stack="api", status="done", commit=FAKE_SHA, **COST, **API),
             dict(id="st-03", stack="web", status="running", attempts=2, interruptions=0, **WEB),
             dict(id="st-04", stack="api", status="done", commit=self.other, **COST, **API),
+            dict(id="st-05", stack="api", status="skipped", reason="runtime", attempts=0, interruptions=0, **API),
+            dict(id="st-06", stack="api", status="skipped", reason="depends on st-05", attempts=0, interruptions=0, **API),
         ]
         save_state(self.ws, "hello", state)
         self.web = self.ws / ".worktrees/hello/web"
@@ -62,6 +64,8 @@ class Resume(unittest.TestCase):
         self.assertEqual(st["st-03"]["status"], "pending")
         self.assertEqual(st["st-03"]["interruptions"], 1)
         self.assertEqual(st["st-03"]["attempts"], 2)
+        self.assertEqual((st["st-05"]["status"], st["st-05"]["attempts"]), ("pending", 0), "a runtime refusal is retried on relaunch, no attempt spent")
+        self.assertEqual(st["st-06"]["status"], "pending", "its dependents reopen with it")
         self.assertEqual((self.web / "README").read_text(), "x\n")
         self.assertFalse((self.web / "junk.txt").exists())
         self.assertEqual(sh("git", "status", "--porcelain", cwd=self.web), "")
@@ -69,7 +73,7 @@ class Resume(unittest.TestCase):
         self.assertEqual(state["phase"], "safety_net")
         self.assertTrue(is_held(state["ports"]["api"]))
         self.assertEqual(len(state["frictions"]), 2)
-        for line in ["st-02: marked done", "st-04: marked done", "st-03: interrupted", "phase: safety net"]:
+        for line in ["st-02: marked done", "st-04: marked done", "st-03: interrupted", "st-05: the runtime had refused", "phase: safety net"]:
             self.assertIn(line, done.stdout)
 
     def test_port_held_by_a_stranger_is_reallocated(self):

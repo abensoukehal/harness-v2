@@ -1,6 +1,7 @@
 """An answered ask reopens what it parked (20.4)."""
 from . import HarnessError
 from .config import load_state, save_state
+from .next import reopen
 
 
 def answer(ws, slug, subtask_id, letter):
@@ -18,19 +19,7 @@ def answer(ws, slug, subtask_id, letter):
     st["status"] = "pending"
     st.pop("reason", None)
     st.pop("last_error", None)
-    reopened = []
-    changed = True
-    while changed:
-        changed = False
-        for other in state["subtasks"]:
-            if other["status"] != "skipped" or not other.get("reason", "").startswith("depends on "):
-                continue
-            deps = [d.strip() for d in other["reason"][len("depends on "):].split(",")]
-            if all(by_id[d]["status"] not in ("blocked", "skipped") for d in deps if d in by_id):
-                other["status"] = "pending"
-                other.pop("reason", None)
-                reopened.append(other["id"])
-                changed = True
+    reopened = reopen(state)
     state["decisions"].append("%s · Ali chose %s: %s · ask" % (subtask_id, letter, options[letter]))
     if state["phase"] in ("finished", "delivery", "qa"):
         state["phase"] = "build"

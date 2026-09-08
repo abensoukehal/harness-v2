@@ -59,6 +59,18 @@ class Workflows(unittest.TestCase):
             self.assertNotIn("`product/", code, p.name)
             self.assertNotIn("workspace root. ", code, p.name)
 
+    def test_a_runtime_refusal_is_retried_once_then_a_friction(self):
+        for p in SCRIPTS:
+            text = p.read_text()
+            self.assertIn("const spawn = async (prompt, opts) => {\n  for (let i = 0; i < 2; i++) {\n    try {\n      const r = await agent(prompt, opts)", text, p.name)
+            self.assertIn("· runtime`", text, p.name)
+            after = text.split("const RUNTIME", 1)[1]
+            self.assertNotIn("await agent(", after, "%s: every spawn after the helper goes through it" % p.name)
+            self.assertGreaterEqual(after.count("await spawn("), 2, p.name)
+        build = (ROOT / "claude/workflows/harness-build.js").read_text()
+        self.assertIn("outcome = { status: 'skipped', reason: 'runtime' }", build)
+        self.assertIn("outcome.reason === 'runtime' ? byId()[id].attempts", build, "a refusal spends no attempt")
+
     def test_pure_orchestration(self):
         for p in SCRIPTS:
             text = p.read_text()

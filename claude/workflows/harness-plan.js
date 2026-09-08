@@ -47,36 +47,50 @@ const RESULT = {
   required: ['ok'],
 }
 
+// The runtime may refuse to spawn an agent with zero tool uses (15.2): one retry, then a friction with reason runtime. Never an attempt.
+const spawn = async (prompt, opts) => {
+  for (let i = 0; i < 2; i++) {
+    try {
+      const r = await agent(prompt, opts)
+      if (r) return r
+      log(`${opts.label}: the runtime returned nothing${i ? '' : ', retrying once'}`)
+    } catch (e) {
+      log(`${opts.label}: the runtime refused (${String(e && e.message).slice(0, 100)})${i ? '' : ', retrying once'}`)
+    }
+  }
+  return null
+}
+const RUNTIME = (label) => `${label} · the runtime refused to start it twice · runtime`
 const parseStep = () => agent(
   `${IO}Run \`${T('plan')} ${slug}\`. Exit 0: ok true, subtask_count = length of "subtasks" in its JSON. Otherwise ok false, error = its stderr verbatim.`,
   { label: 'parse plan', schema: RESULT, effort: 'low' })
 
 phase('Ingestion')
-const scout = await agent(
+const scout = await spawn(
   `${IO}Report on ${FEATURE}: does spec.md exist, does plan.md exist, does state.json exist, and list the files under design/.`,
   { label: 'scout', schema: SCOUT, effort: 'low' })
-if (!scout) throw new Error('scout returned nothing')
+if (!scout) throw new Error(RUNTIME('scout'))
 if (!scout.spec_exists) throw new Error(`${FEATURE}/spec.md is missing: run ${T('new')} ${slug} and fill it in`)
 if (scout.plan_exists) log(`plan.md exists for ${slug}: planning reruns and rewrites it`)
 
-const ingestion = await agent(
+const ingestion = await spawn(
   `Workspace root: ${WS}. Feature ${slug}. Run the Ingestion part of your Method on ${FEATURE}/spec.md and ${FEATURE}/design/ (${scout.design_files.length} files). ` +
   `Write ${WS}/product/code-map/ and ${WS}/product/conventions.md. Return the stacks, the zones and a summary under 300 characters.`,
   { agentType: 'planner', label: 'ingest', schema: INGESTION })
-if (!ingestion) throw new Error('ingestion returned nothing')
+if (!ingestion) throw new Error(RUNTIME('ingest'))
 log(`ingested ${ingestion.zones.length} zones across ${ingestion.stacks.join(', ')}`)
 
 phase('Planning')
-const planning = await agent(
+const planning = await spawn(
   `Workspace root: ${WS}. Feature ${slug}. Ingestion found stacks ${ingestion.stacks.join(', ')} and zones ${ingestion.zones.join(', ')}. ${ingestion.summary}\n` +
   `Run the Planning part of your Method. Write ${FEATURE}/plan.md in the exact layout, ${FEATURE}/spec-gaps.md and ${FEATURE}/journey.md. ` +
   'Return kind, the counts, and the plan-ready message in the communicate skill shape as "message".',
   { agentType: 'planner', label: 'plan', schema: PLANNING })
-if (!planning) throw new Error('planning returned nothing')
+if (!planning) throw new Error(RUNTIME('plan'))
 
 const init = scout.state_exists ? '' : `${T('state')} init ${slug} ${planning.kind}\n`
 const patch = JSON.stringify({ kind: planning.kind, phase: 'planning', ingestion: { stacks: ingestion.stacks, zones: ingestion.zones, summary: ingestion.summary } })
-const recorded = await agent(
+const recorded = await spawn(
   `${IO}Run:\n${init}${T('state')} update ${slug} - <<'EOF'\n${patch}\nEOF\nReturn ok true when every command exits 0, else ok false with the stderr as error.`,
   { label: 'record state', schema: RESULT, effort: 'low' })
 if (!recorded || !recorded.ok) throw new Error(`state not recorded: ${recorded && recorded.error}`)
@@ -84,13 +98,13 @@ if (!recorded || !recorded.ok) throw new Error(`state not recorded: ${recorded &
 let parsed = await parseStep()
 if (!parsed || !parsed.ok) {
   log(`plan.md refused: ${parsed && parsed.error}`)
-  await agent(
+  await spawn(
     `Workspace root: ${WS}. Feature ${slug}. ${T('plan')} refused ${FEATURE}/plan.md:\n${parsed && parsed.error}\nFix plan.md so it follows the layout exactly. Change nothing else.`,
     { agentType: 'planner', label: 'fix plan', schema: RESULT })
   parsed = await parseStep()
   if (!parsed || !parsed.ok) throw new Error(`plan.md still malformed:\n${parsed && parsed.error}`)
 }
-await agent(
+await spawn(
   `${IO}Run:\n${T('state')} update ${slug} - <<'EOF'\n${JSON.stringify({ plan_message: planning.message })}\nEOF\n${T('notify')} ${slug} plan_ready\nReturn ok true when both exit 0, else ok false with stderr as error.`,
   { label: 'notify', schema: RESULT, effort: 'low' })
 log(`plan ready: ${parsed.subtask_count} sub-tasks, ${planning.gap_count} gaps, ${planning.journey_steps} journey steps`)

@@ -5,6 +5,7 @@ import sys
 from . import git, worktree
 from .config import load_config, load_state, save_state
 from .env import up
+from .next import reopen
 from .ports import is_held
 
 MAX_INTERRUPTIONS = 3
@@ -27,6 +28,10 @@ def reconcile(ws, cfg, slug, state):
             state["frictions"].append("%s · state said done but the commit was not on the branch · resume" % st["id"])
             st["status"] = "pending"
             st.pop("commit", None)
+        elif st["status"] == "skipped" and st.get("reason") == "runtime":
+            st["status"] = "pending"
+            st.pop("reason", None)
+            notes.append("%s: the runtime had refused its agent; back to pending" % st["id"])
         elif st["status"] == "running":
             git("checkout", "--", ".", cwd=wt)
             git("clean", "-fdq", cwd=wt)
@@ -37,6 +42,8 @@ def reconcile(ws, cfg, slug, state):
             else:
                 st["status"] = "pending"
                 notes.append("%s: interrupted; partial work dropped, back to pending" % st["id"])
+    for id_ in reopen(state):
+        notes.append("%s: its dependency is back; reopened" % id_)
     held = [name for name, port in state["ports"].items() if is_held(port)]
     if held:
         notes.append("ports still held for %s; stacks restart on fresh ports" % ", ".join(held))

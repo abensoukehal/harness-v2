@@ -14,6 +14,7 @@ REASONS = {
     "missing_file": "it needed a file outside its list",
     "review": "the review found it not ready",
     "error": "the run lost track of it",
+    "runtime": "the runtime declined to start its agent twice; a relaunch retries it",
     "unstable": "the run died on it three times",
     "pending": "the run stopped before it started",
     "running": "the run stopped while it was under way",

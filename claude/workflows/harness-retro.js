@@ -37,21 +37,38 @@ const CHECK = {
 }
 const TREE = { type: 'object', properties: { ok: { type: 'boolean' }, tree: { type: 'string' }, error: { type: 'string' } }, required: ['ok'] }
 
+// The runtime may refuse to spawn an agent with zero tool uses (15.2): one retry, then a friction with reason runtime. Never an attempt.
+const spawn = async (prompt, opts) => {
+  for (let i = 0; i < 2; i++) {
+    try {
+      const r = await agent(prompt, opts)
+      if (r) return r
+      log(`${opts.label}: the runtime returned nothing${i ? '' : ', retrying once'}`)
+    } catch (e) {
+      log(`${opts.label}: the runtime refused (${String(e && e.message).slice(0, 100)})${i ? '' : ', retrying once'}`)
+    }
+  }
+  return null
+}
+const RUNTIME = (label) => `${label} · the runtime refused to start it twice · runtime`
 phase('Retro')
 // The retro edits its own clone of the engine (14.5); the workspace's harness/ stays at the pin.
-const made = await agent(`Run \`${T('retro-tree')} ${slug}\`. Exit 0: ok true, tree = the last line of its stdout. Otherwise ok false, error = stderr verbatim.`,
+const made = await spawn(`Run \`${T('retro-tree')} ${slug}\`. Exit 0: ok true, tree = the last line of its stdout. Otherwise ok false, error = stderr verbatim.`,
   { label: 'engine clone', schema: TREE, effort: 'low' })
 if (!made || !made.ok || !made.tree) throw new Error(`no engine clone for the retro: ${made && made.error}`)
 const TREE_DIR = made.tree
-const retro = await agent(
+const retro = await spawn(
   `Workspace root: ${WS}. Feature ${slug}. Engine clone: ${TREE_DIR}; every engine edit, test run, commit and push happens there. Never edit, pull or check out ${WS}/harness. ` +
   `Follow the retro skill on ${FEATURE}/state.json. Return pushed, unpushed, the tag, the files edited, the frictions dropped, the open questions added, and whether a suspected regression was written.`,
   { agentType: 'retro', label: 'retro', schema: RETRO })
-if (!retro) throw new Error('retro returned nothing')
+if (!retro) {
+  await spawn(`Run:\n${T('state')} update ${slug} - <<'EOF'\n${JSON.stringify({ frictions: [RUNTIME('retro')] })}\nEOF`, { label: 'record friction', schema: TREE, effort: 'low' })
+  return { status: 'failed', reason: 'runtime', pushed: false, unpushed: false, edits: [], dropped: [], open_questions: [] }
+}
 log(`retro: ${retro.edits.length} files edited, ${retro.dropped.length} frictions dropped, ${retro.open_questions.length} open questions${retro.unpushed ? ', UNPUSHED' : ''}`)
 
 phase('Check')
-const check = await agent(
+const check = await spawn(
   `In ${TREE_DIR}, change nothing. Run \`tests/hygiene.sh --workspace ${WS}\` and \`npm test\`: tests_green when both exit 0. ` +
   `clean = \`git status --porcelain\` prints nothing. tag_exists = \`git tag -l retro/${slug}\` prints the tag. report_exists = ${FEATURE}/report.md exists. ` +
   `harness_at_pin = \`git -C ${WS}/harness rev-parse HEAD\` equals the content of ${WS}/product/harness.pin. detail = the failing lines, ten at most.`,

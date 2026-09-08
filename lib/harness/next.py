@@ -6,6 +6,24 @@ MAX_PARALLEL = 4
 DEAD = ("blocked", "skipped")
 
 
+def reopen(state):
+    """Skipped sub-tasks whose dependencies are no longer blocked or skipped go back to pending, transitively. Returns their ids."""
+    by_id = {s["id"]: s for s in state["subtasks"]}
+    reopened, changed = [], True
+    while changed:
+        changed = False
+        for st in state["subtasks"]:
+            if st["status"] != "skipped" or not st.get("reason", "").startswith("depends on "):
+                continue
+            deps = [d.strip() for d in st["reason"][len("depends on "):].split(",")]
+            if all(by_id[d]["status"] not in DEAD for d in deps if d in by_id):
+                st["status"] = "pending"
+                st.pop("reason", None)
+                reopened.append(st["id"])
+                changed = True
+    return reopened
+
+
 def next_batch(ws, slug):
     cfg = load_config(ws)
     state = load_state(ws, slug)
