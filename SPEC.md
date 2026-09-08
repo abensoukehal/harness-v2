@@ -317,7 +317,7 @@ Forbidden: any criterion that reads like "looks correct", "works as expected", "
 
 ### 5.3 Non-deterministic sub-tasks
 
-An LLM output is not a boolean, so an `ai-worker` sub-task cannot take a criterion in the form above. It does not get an exemption either. It gets a different contract, and the plan marks which one applies.
+An LLM output is not a boolean, so a sub-task carrying an examples criterion cannot take a criterion in the form above. The contract rides on the criterion, not on which agent runs it. It does not get an exemption either. It gets a different contract, and the plan marks which one applies.
 
 Split the work, because most of an AI sub-task is ordinary code:
 
@@ -342,7 +342,8 @@ Non-negotiable rules.
 3. **No exploration by workers.** The briefing lists exact files. A worker that needs a file not in its list reports `NEEDS: <path> because <reason>` and stops. The orchestrator decides (add file, respawn) rather than letting the worker wander.
 4. **Read slices, not files.** Grep for the symbol, read ~50 lines around it. Whole-file reads only for files under 150 lines.
 5. **Truncate tool output.** Test failures: the assertion and the 10 relevant lines. Never full stack traces. Build output: errors only.
-6. **Budget per worker.** Token budget in the briefing. Worker exceeds it → stops, reports partial state as BLOCKED with `reason: budget`.
+6. **Budget per worker.** Token budget in the briefing, defaulting to the feature budget divided by the sub-task count and overridable per sub-task in state. Worker exceeds it → stops, reports partial state as BLOCKED with `reason: budget`.
+7. **Budget per briefing.** `budget.briefing_chars` caps assembled size. Over the cap, assembly refuses and names both the cap and the size of the conventions file that pushed it over, because that file is nearly always the cause and the fix is a reduction pass, not a larger cap.
 7. **Knowledge goes to files, not context.** What a worker learns about the code goes to `code-map/` or `conventions.md`, not into its running context for later.
 8. **No context chaining.** One `CLAUDE.md` at workspace root, short. Stack knowledge is loaded on demand by the ingestion phase, never imported permanently.
 9. **Avoid compaction.** Compaction means tokens were already wasted. Design so it isn't needed.
@@ -374,7 +375,7 @@ Agents are defined by **role**, not technology. The catalogue lives in `harness/
 
 - `planner`: phases 1-2.
 - `test-writer`: phase 3, and criteria test files.
-- `backend-worker`, `frontend-worker`, `mobile-worker`, `ai-worker`: phase 4 implementation.
+- `worker`: phase 4 implementation. **One agent, not one per stack.** With the role, the stack commands and the behaviour contract all arriving in the briefing, four stack-named workers were four copies of one file, which is how v1 reached 370,000 characters of doctrine. The stack is an input, not an identity.
 - `reviewer`: self-review and reduction pass (can be the same worker, second prompt, or a separate agent for a cleaner adversarial stance).
 - `qa`: phase 5.
 - `retro`: phase 6.
@@ -540,6 +541,7 @@ Phases 4 and 5 need the stacks running. On legacy code a stack can take a minute
 **Restarting a stack.** A worker that needs one restarted, typically after a config or dependency change, returns `RESTART: <stack>` in its structured result and stops. It does not run the command itself; a worker with the power to restart infrastructure will use it to work around a problem instead of reporting one.
 
 - The orchestrator calls `harness/bin/restart <slug> <stack>`, which stops that stack, starts it, and reruns its health check. Dependents are restarted with it, in order.
+- **A restart does not reseed.** Seeding runs once, at environment startup. A sub-task mid-flight has usually built up data the frozen tests read, and wiping it under a worker that is about to retry means the retry runs against a different world than the attempt before it, for reasons nobody recorded. A worker that genuinely needs fresh data returns `RESTART: <stack> --reseed` and says why in its report; the reseed is written to state so the retro can see which runs had one.
 - The port stays the same across a restart, since it is in state and nothing else claimed it.
 - The worker is respawned with the same briefing. This does not consume an attempt: the environment failed, not the sub-task.
 - Two restarts of the same stack within one sub-task is a BLOCKED sub-task with `reason: environment`. The third would be a loop.
@@ -573,6 +575,8 @@ When the harness needs Ali (blocked plan decision, end-of-run report, anything r
 2. **What's stuck.** Explained to a colleague who followed nothing. No file names, no function names, no stack traces.
 3. **What was tried.** Two lines max.
 4. **What I need from you.** A closed question with 2-3 options, answerable from a phone in ten seconds.
+
+"Answerable from a phone" is a property of the text, so it is checked as one rather than asked for politely: no path or file name outside `Detail:`, at most three options, lettered in order, exactly one marked recommended, report under 600 characters, rendered ask under 700. An ask that fails these is refused at the field that failed. This is pillar one applied to the harness's own output: a rule that only exists in prose is a rule that stops holding on a bad day.
 
 Technical detail lives in `state.json` and the feature folder. The message points there once, at the end, if Ali wants to dig.
 
@@ -757,6 +761,15 @@ Two files the harness maintains so a conversation about the harness can start wi
 - `harness/tests/hygiene.sh` green on the harness's own files and on the product layer.
 - Total harness instruction text under 40,000 characters.
 - Harness test suite green.
+
+### 19.1 Open, on purpose
+
+Two questions have now been raised by two separate retros and are recorded rather than answered, because inventing a mechanism for a failure nobody has hit yet is how v1 grew four generations of correctives:
+
+- **The reviewer's edits go stale the same way a worker's do.** A review pass that reads a file, thinks, and writes finds the file moved under it after a restart or a concurrent fix, and nothing detects it.
+- **The reviewer has no restart channel.** `RESTART:` is a worker result. A reviewer meeting a dead stack has no way to say so.
+
+Give the reviewer the worker's restart channel, since that costs nothing and the mechanism already exists. Leave the staleness open until a real run produces one, then fix the case that actually occurred.
 
 ## 20. Lessons from v1
 
