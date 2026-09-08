@@ -7,7 +7,7 @@ from pathlib import Path
 
 from helpers import MONO_CONFIG, env_config, env_workspace, make_repo, run, sh
 from harness import worktree
-from harness.config import load_config, load_state, stack_dir
+from harness.config import create_state, load_config, load_state, save_state, stack_dir
 from harness.env import stop_all
 from harness.ports import allocate, is_held
 
@@ -100,14 +100,41 @@ class Up(unittest.TestCase):
 
     def test_never_healthy_fails_at_environment_step(self):
         ws = self.workspace(web_health='log: "will not appear"', web_timeout=2)
+        state = load_state(ws, "hello")
+        state["subtasks"] = [{"id": "st-01", "stack": "api", "status": "pending", "attempts": 0, "interruptions": 0,
+                              "worktree": ".worktrees/hello/svc", "exit_criteria": [{"kind": "lint"}]}]
+        save_state(ws, "hello", state)
         t0 = time.monotonic()
         done = run("up", "hello", ws=ws)
         self.assertEqual(done.returncode, 1)
         self.assertLess(time.monotonic() - t0, 10)
         self.assertIn("stack web not healthy after 2s", done.stderr)
+        self.assertEqual([s["status"] for s in load_state(ws, "hello")["subtasks"]], ["pending"], "no sub-task started")
         self.assertNotIn(SECRET, done.stdout + done.stderr)
         self.assertFalse((ws / ".run/hello").exists())
         self.assertFalse(is_held(load_state(ws, "hello")["ports"]["api"]), "api was left running")
+
+    def test_two_features_at_once_get_separate_worktrees_and_ports(self):
+        ws = self.workspace()
+        self.assertEqual(run("new", "world", ws=ws).returncode, 0)
+        create_state(ws, "world", "service")
+        self.addCleanup(stop_all, ws, "world")
+        for slug in ["hello", "world"]:
+            done = run("up", slug, ws=ws)
+            self.assertEqual(done.returncode, 0, done.stderr)
+        hello, world = load_state(ws, "hello"), load_state(ws, "world")
+        self.assertEqual(set(hello["ports"].values()) & set(world["ports"].values()), set())
+        for st in (hello, world):
+            self.assertTrue(is_held(st["ports"]["api"]))
+        self.assertEqual(hello["worktrees"], {"svc": ".worktrees/hello/svc", "web": ".worktrees/hello/web"})
+        self.assertEqual(world["worktrees"], {"svc": ".worktrees/world/svc", "web": ".worktrees/world/web"})
+        self.assertEqual(sh("git", "rev-parse", "--abbrev-ref", "HEAD", cwd=ws / ".worktrees/world/svc"), "feature/world")
+        self.assertEqual(sh("git", "rev-parse", "--abbrev-ref", "HEAD", cwd=ws / ".worktrees/hello/svc"), "feature/hello")
+        self.assertEqual(run("cleanup", "hello", ws=ws).returncode, 0)
+        self.assertFalse(is_held(hello["ports"]["api"]))
+        self.assertTrue(is_held(world["ports"]["api"]), "the other feature keeps running")
+        self.assertEqual(run("cleanup", "world", ws=ws).returncode, 0)
+        self.assertFalse(is_held(world["ports"]["api"]))
 
     def test_dies_at_boot_fails_immediately(self):
         ws = self.workspace(web_dev="echo boom; exit 3", web_timeout=15)
