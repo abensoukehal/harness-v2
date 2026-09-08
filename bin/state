@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+
+import json
+import time
+from harness import HarnessError, check_slug, find_workspace, main
+from harness.config import create_state, load_state, save_state, state_path
+
+USAGE = "usage: state init <slug> <kind> | get <slug> | update <slug> <json|->"
+
+
+def merge(state, patch):
+    for key, value in patch.items():
+        if key == "subtasks":
+            by_id = {s["id"]: s for s in state["subtasks"]}
+            for item in value:
+                target = by_id.get(item["id"])
+                if target is None:
+                    state["subtasks"].append(item)
+                    by_id[item["id"]] = item
+                    continue
+                since = item.pop("_since", None)
+                target.update(item)
+                if since is not None:
+                    target["duration_s"] = max(0, int(time.time()) - int(since))
+        elif key in ("decisions", "frictions"):
+            state[key].extend(value)
+        else:
+            state[key] = value
+    return state
+
+
+def run(argv):
+    if len(argv) < 2:
+        raise HarnessError(USAGE)
+    ws, cmd, slug = find_workspace(), argv[0], check_slug(argv[1])
+    if cmd == "init" and len(argv) == 3:
+        if state_path(ws, slug).exists():
+            raise HarnessError("state for %s exists; refusing to overwrite" % slug)
+        create_state(ws, slug, argv[2])
+    elif cmd == "get" and len(argv) == 2:
+        print(json.dumps(load_state(ws, slug), indent=2))
+        return
+    elif cmd == "update" and len(argv) == 3:
+        raw = sys.stdin.read() if argv[2] == "-" else argv[2]
+        try:
+            patch = json.loads(raw)
+        except ValueError as e:
+            raise HarnessError("patch is not JSON: %s" % e)
+        save_state(ws, slug, merge(load_state(ws, slug), patch))
+    else:
+        raise HarnessError(USAGE)
+    print(json.dumps({"now": int(time.time())}))
+
+
+main(run)

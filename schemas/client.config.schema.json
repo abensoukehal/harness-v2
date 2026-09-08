@@ -80,7 +80,15 @@
         "max_attempts": { "type": "integer", "minimum": 1, "default": 4 }
       }
     },
-    "max_parallel_features": { "type": "integer", "minimum": 1, "default": 2 }
+    "max_parallel_features": { "type": "integer", "minimum": 1, "default": 2 },
+    "models": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "planner": { "type": "string" }, "worker": { "type": "string" }, "reviewer": { "type": "string" },
+        "qa": { "type": "string" }, "retro": { "type": "string" }, "io": { "type": "string" }
+      }
+    }
   },
   "$defs": {
     "command": { "type": "string", "minLength": 1 },
@@ -96,6 +104,7 @@
       "properties": {
         "repo": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
         "path": { "type": "string", "pattern": "^repos/" },
+        "role": { "enum": ["backend", "frontend", "mobile", "ai"] },
         "framework": { "type": "string" },
         "package_manager": { "type": "string" },
         "commands": {

@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+
+import json
+from harness import HarnessError, check_slug, find_workspace, main
+from harness.config import feature_dir, load_config
+from harness.plan import config_block, parse
+
+
+def run(argv):
+    if len(argv) != 1:
+        raise HarnessError("usage: plan <slug>")
+    ws = find_workspace()
+    slug = check_slug(argv[0])
+    path = feature_dir(ws, slug) / "plan.md"
+    if not path.exists():
+        raise HarnessError("no plan.md for %s: run /harness-plan %s first" % (slug, slug))
+    cfg = load_config(ws)
+    plan = parse(path.read_text(), cfg)
+    plan["config"] = config_block(cfg)
+    print(json.dumps(plan, indent=2))
+
+
+main(run)
