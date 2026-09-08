@@ -469,7 +469,7 @@ Only feature code, on the feature branch. Enforced by a path allowlist at commit
 ### 9.2 Commits
 
 - Author and committer: from `delivery.commit_author`. Nothing else.
-- No `Co-Authored-By`. Any global git config or hook that adds trailers is overridden in the workspace (`git config --local` in each stack, set by the harness on workspace init).
+- No `Co-Authored-By`. Any global git config or hook that adds trailers is overridden in the workspace (`git config --local` in each repo, set when that repo's first worktree is created, since the client repos are cloned after the workspace exists).
 - Message: a factual description of what was implemented. Imperative, one line, optional short body. Example: `Add coupon validation to checkout form`.
 - Forbidden in messages: task ids, feature slugs from the product layer, the words harness/agent/Claude/AI, references to internal files, dates from the run.
 - Do not read the client's commit history to mimic style. Just write plain, clear commits.
@@ -647,10 +647,11 @@ These rules apply to every file the retro touches, and to the initial implementa
 The retro edits the engine with no human review, and its own tests only cover mechanics: schemas, the commit allowlist, port allocation, briefing assembly. They cannot tell whether a rewritten instruction still works. That is only visible on the next feature, which is why there has to be a way back.
 
 - Every retro push is tagged `retro/<slug>` on the harness repo. The tag is the rollback point, and `state.json` already records the harness commit each run started from.
+- **The branch is pushed first, and the tag only after that push succeeds.** A tag pushed on its own points at commits the remote holds on no branch: invisible to anyone cloning, un-fetched by default, and still picked up by the rollback search. The next rollback then targets a commit that does not exist locally. Order the two pushes and delete the tag locally if the branch push is refused.
 - The first thing the retro does on the next run is compare that run's totals against the median of the previous three **in the same workspace**: tokens, wall time, blocked count, attempts per sub-task. Cost varies more between clients than between harness versions, so a cross-client comparison is noise wearing the shape of a signal.
 - Below three runs in the workspace there is no baseline and no comparison. The retro says so in one line rather than reasoning from one data point.
 - A run more than 50% worse on any of those, with no matching growth in feature size, is a **suspected regression**. The retro does not decide it caused it. It writes the finding at the top of `retro.md`, names the harness commits in that window, and appends to `OPEN_QUESTIONS.md`.
-- `harness/bin/rollback [<tag>]` resets the engine to the previous retro tag, defaulting to the last one. Ali runs it. Rolling back is a revert commit, never a force-push, so no other workspace loses history.
+- `harness/bin/rollback [<tag>]` resets the engine to a previous retro tag, defaulting to the newest `retro/*` tag **strictly behind HEAD**. When HEAD itself carries a tag, that tag is the run being rolled back and the target is the one before it. Ali runs it. Rolling back is a revert commit, never a force-push, so no other workspace loses history.
 - A rolled-back change is not retried silently. It goes to `harness/OPEN_QUESTIONS.md`, which the retro creates on first use and never on bootstrap. An empty file that exists is a file every agent loads for nothing. It goes there with what it was trying to fix, so the friction survives even though the fix did not.
 
 ### 14.6 Harness tests
@@ -723,6 +724,9 @@ Two files the harness maintains so a conversation about the harness can start wi
 - A new workspace can be created from a template with `harness/bin/init <client>`.
 - **The pin is a file, not a convention.** `product/harness.pin` holds the harness commit the workspace runs. `init` writes it, `link` verifies it, and every workflow refuses to start when `harness/` is at a different commit. Without that check a workspace silently drifts onto whatever the last `git pull` brought, and the harness commit recorded in state describes a run that nobody can reproduce.
 - Ali moves a workspace forward with `harness/bin/pin <client> [<commit>]`, defaulting to the harness remote's HEAD. Upgrading is a deliberate act per workspace, so a bad retro cannot reach every client at once.
+- Workspaces are found under `--root`, else `HARNESS_WORKSPACES`, else `<harness>/../workspaces`. Same resolution order as `init`, since a command that finds a workspace where another one put it is one less thing to remember.
+- **What enforces the pin is the tools, not the workflow runtime**, which offers no pre-start hook. Every tool a workflow calls first (`plan`, `state`, `up`, `resume`, `briefing`, `commit`) refuses when `harness/` is at another commit, naming both. The effect is a workflow that stops at launch. `cleanup` and `close` never refuse: a drifted workspace must still be able to shut down and hand over.
+- **A drifted checkout is repaired by moving `harness/` back to the pin, not by moving the pin forward.** Recovery is `bin/pin <client> $(cat product/harness.pin)`. Resuming a crashed run on a newer engine than the one that started it silently changes the rules mid-run, which is the failure the pin exists to prevent.
 - `/harness-plan` produces a plan with only machine-runnable criteria on a sample legacy repo.
 - `/harness-build` runs unattended to completion (or to BLOCKED items) on that sample, commits pass the hygiene tests, ports are released after.
 - `/harness-retro` edits harness files without adding history sections, pushes, and handles a forced push rejection by pulling and retrying.
@@ -741,7 +745,8 @@ Two files the harness maintains so a conversation about the harness can start wi
 - A workflow refuses to start when `harness/` does not match `product/harness.pin`.
 - A resume whose recorded port is held by a foreign process reallocates and continues.
 - A worker returning `RESTART:` gets a restarted stack and its original briefing, with no attempt spent.
-- A push to any ref other than the feature branch is refused by the hook, in bypass permission mode.
+- A push to any ref other than the feature branch is refused by the hook, in bypass permission mode. Git hooks are per repository, not per worktree: one `core.hooksPath` per client repo covers every worktree of it, and the hook reads its feature from the worktree path it was invoked from.
+- A retro tag never reaches the harness remote before its branch does.
 - QA stops at `max_fixes` and delivers with the remaining failures named in the report.
 - An edited `plan.md` changes what the build does; a malformed one fails at launch with the offending line quoted.
 - A retro commit naming a client, repo or service is refused by `hygiene.sh`.
