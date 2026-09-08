@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import ROOT, make_workspace, run, sh
+from helpers import ROOT, env_config, make_repo, make_workspace, run, sh
 
 
 class Init(unittest.TestCase):
@@ -31,6 +31,33 @@ class Init(unittest.TestCase):
             self.assertEqual(link.resolve(), (ws / "harness" / "claude" / name).resolve())
         self.assertEqual(run("validate", ws / "product" / "client.config.yaml").returncode, 0)
         self.assertEqual((ws / "product" / "harness.pin").read_text().strip(), sh("git", "rev-parse", "HEAD", cwd=ws / "harness"))
+
+    def test_config_clones_every_repo_and_installs_the_harness(self):
+        remotes = self.root / "remotes"
+        for name in ["svc", "web"]:
+            make_repo(remotes / name)
+            sh("git", "clone", "-q", "--bare", str(remotes / name), str(remotes / (name + ".git")), cwd=self.root)
+        config = self.root / "client.config.yaml"
+        config.write_text(env_config(extra="repos: {svc: %s}" % (remotes / "svc.git")))
+        refused = run("init", "example-f", "--root", self.root, "--config", config)
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn("repos/web is missing and the config has no url under repos.web", refused.stderr)
+        config.write_text(env_config(extra="repos: {svc: %s, web: %s}" % (remotes / "svc.git", remotes / "web.git")))
+        done = run("init", "example-g", "--root", self.root, "--config", config)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        ws = Path(done.stdout.strip().splitlines()[-1])
+        self.assertEqual((ws / "product/client.config.yaml").read_text(), config.read_text())
+        for name in ["svc", "web"]:
+            self.assertTrue((ws / "repos" / name / ".git").exists(), name)
+            self.assertEqual(sh("git", "remote", "get-url", "origin", cwd=ws / "repos" / name), str(remotes / (name + ".git")))
+        self.assertTrue((ws / "harness/node_modules/ajv").is_dir(), "the harness clone has its own dependencies")
+        self.assertEqual(run("validate", ws / "product/features/../client.config.yaml").returncode, 0)
+        sh("rm", "-rf", str(ws / "repos/web"), cwd=self.root)
+        relinked = run("link", ws, ws=ws)
+        self.assertEqual(relinked.returncode, 0, relinked.stderr)
+        self.assertIn("cloned repos/web", relinked.stdout)
+        self.assertTrue((ws / "repos/web/.git").exists(), "link clones what is missing")
+        self.assertEqual(run("init", "example-h", "--root", self.root, "--config", self.root / "nope.yaml").returncode, 1)
 
     def test_refuses_existing_and_bad_names(self):
         make_workspace(self.root, "example-b")

@@ -47,8 +47,21 @@ def ensure(ws, cfg, slug, state):
                 cwd=repo_dir, capture_output=True).returncode == 0
             target = [branch] if have_branch else ["-b", branch, base]
             git("worktree", "add", str(path), *target, cwd=repo_dir)
+            install(ws, cfg, slug, repo)
         state["worktrees"][repo] = rel
     state["branch"] = branch
+
+
+def install(ws, cfg, slug, repo):
+    """A fresh worktree has no dependencies: run commands.install for every stack living in it."""
+    from .config import stack_dir
+    for name, stack in cfg["stacks"].items():
+        command = stack.get("commands", {}).get("install")
+        if stack["repo"] != repo or not command:
+            continue
+        done = subprocess.run(["bash", "-c", command], cwd=str(stack_dir(ws, cfg, slug, name)), capture_output=True, text=True)
+        if done.returncode:
+            raise HarnessError("stack %s: install failed with code %d\n%s" % (name, done.returncode, "\n".join((done.stdout + done.stderr).splitlines()[-10:])))
 
 
 def remove(ws, cfg, slug, state):

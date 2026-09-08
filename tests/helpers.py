@@ -35,7 +35,7 @@ def make_repo(path):
 def make_workspace(root, client="example-env"):
     done = run("init", client, "--root", root)
     assert done.returncode == 0, done.stderr
-    return Path(done.stdout.strip())
+    return Path(done.stdout.strip().splitlines()[-1])
 
 
 TAIL = textwrap.dedent("""
@@ -63,14 +63,17 @@ WEB_DEV = ("python3 -c \"import urllib.request,os; urllib.request.urlopen('http:
            " && echo \"booting with $DB_PASSWORD\" && echo \"ready on ${PORT_WEB}\" && sleep 60")
 
 
-def env_config(web_health='log: "ready on"', web_timeout=15, web_dev=WEB_DEV, api_seed="echo seeded >> seed.marker"):
+def env_config(web_health='log: "ready on"', web_timeout=15, web_dev=WEB_DEV, api_seed="echo seeded >> seed.marker",
+               api_install="echo installed >> install.marker", extra=""):
     return textwrap.dedent("""
         client: example-env
+        %s
         stacks:
           api:
             repo: svc
             path: repos/svc
             commands:
+              install: %s
               dev: python3 -m http.server ${PORT_API} --bind 127.0.0.1
             env_file: api.env
             depends_on: [db]
@@ -97,7 +100,7 @@ def env_config(web_health='log: "ready on"', web_timeout=15, web_dev=WEB_DEV, ap
             health:
               tcp: ${PORT_DB}
             health_timeout_s: 15
-    """ % (api_seed, web_dev, web_health, web_timeout)) + TAIL % "{api: pytest, web: playwright}"
+    """ % (extra, api_install, api_seed, web_dev, web_health, web_timeout)) + TAIL % "{api: pytest, web: playwright}"
 
 
 MONO_CONFIG = textwrap.dedent("""

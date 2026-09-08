@@ -13,6 +13,11 @@
       "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
       "additionalProperties": { "$ref": "#/$defs/stack" }
     },
+    "repos": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[A-Za-z0-9._-]+$" },
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    },
     "delivery": {
       "type": "object",
       "additionalProperties": false,

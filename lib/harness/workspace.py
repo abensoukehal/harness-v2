@@ -3,8 +3,11 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 
 from . import HARNESS_ROOT, PIN, HarnessError, check_pin, check_slug, git
+from .config import load_config
+from .worktree import repos_of
 
 TEMPLATES = HARNESS_ROOT / "templates"
 LINKED = ["workflows", "agents", "skills"]
@@ -18,17 +21,20 @@ def render(template, **subs):
     return text
 
 
-def init(client, root):
+def init(client, root, config=None, out=sys.stdout):
+    """A workspace from the template: harness clone at the pin with its dependencies installed, the config, every repo it names (2.1)."""
     check_slug(client, "client name")
     ws = root / client
     if ws.exists():
         raise HarnessError("%s already exists" % ws)
+    if config is not None and not config.is_file():
+        raise HarnessError("no config file at %s" % config)
     for d in ["secrets", "repos", ".worktrees", "product/code-map", "product/tests", "product/features"]:
         (ws / d).mkdir(parents=True)
     os.chmod(ws / "secrets", 0o700)
     (ws / "CLAUDE.md").write_text(render("workspace/CLAUDE.md", client=client, root=str(ws)))
     product = ws / "product"
-    (product / "client.config.yaml").write_text(render("workspace/client.config.yaml", client=client))
+    (product / "client.config.yaml").write_text(config.read_text() if config else render("workspace/client.config.yaml", client=client))
     (product / "conventions.md").write_text("")
     (product / "cost-log.md").write_text(COST_LOG_HEADER)
     for d in ["code-map", "tests", "features"]:
@@ -39,16 +45,43 @@ def init(client, root):
     if origin.returncode == 0:
         git("remote", "set-url", "origin", origin.stdout.strip(), cwd=ws / "harness")
     (ws / PIN).write_text(git("rev-parse", "HEAD", cwd=ws / "harness") + "\n")
-    link(ws)
+    install_harness(ws)
+    if config:
+        clone_repos(ws, load_config(ws), strict=True, out=out)
+    link(ws, out)
     return ws
 
 
-def link(ws):
-    """Link .claude/ to the harness and write the workspace root into .claude/settings.json, the one place every agent reads it from (2.2)."""
+def install_harness(ws):
+    done = subprocess.run(["npm", "ci", "--no-fund", "--no-audit", "--prefer-offline"], cwd=ws / "harness", capture_output=True, text=True)
+    if done.returncode:
+        raise HarnessError("harness dependencies did not install:\n%s" % "\n".join(done.stderr.splitlines()[-10:]))
+
+
+def clone_repos(ws, cfg, strict, out=sys.stdout):
+    """Every repo a stack names exists under repos/, cloned from repos.<name> in the config. Missing with no url: refused when strict, named otherwise."""
+    urls = cfg.get("repos", {})
+    for repo in repos_of(cfg):
+        target = ws / "repos" / repo
+        if (target / ".git").exists():
+            continue
+        if repo not in urls:
+            if strict:
+                raise HarnessError("repos/%s is missing and the config has no url under repos.%s" % (repo, repo))
+            out.write("repos/%s is missing and the config has no url under repos.%s\n" % (repo, repo))
+            continue
+        git("clone", "-q", urls[repo], str(target))
+        out.write("cloned repos/%s\n" % repo)
+
+
+def link(ws, out=sys.stdout):
+    """Link .claude/ to the harness, write the workspace root into .claude/settings.json, the one place every agent reads it from (2.2),
+    and clone any repo the config names that is not there yet."""
     source = ws / "harness" / "claude"
     if not source.is_dir():
         raise HarnessError("%s has no harness/claude directory" % ws)
     check_pin(ws)
+    clone_repos(ws, load_config(ws), strict=False, out=out)
     dot = ws / ".claude"
     dot.mkdir(exist_ok=True)
     settings_path = dot / "settings.json"

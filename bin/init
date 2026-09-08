@@ -9,16 +9,24 @@ from harness import HARNESS_ROOT, HarnessError, main
 from harness.workspace import init
 
 
+def option(argv, flag):
+    if flag not in argv:
+        return None
+    i = argv.index(flag)
+    if i + 1 >= len(argv):
+        raise HarnessError("%s needs a value" % flag)
+    value = Path(argv[i + 1]).resolve()
+    del argv[i:i + 2]
+    return value
+
+
 def run(argv):
-    root = None
-    if "--root" in argv:
-        i = argv.index("--root")
-        root = Path(argv[i + 1]) if i + 1 < len(argv) else None
-        del argv[i:i + 2]
-    if len(argv) != 1 or root is False:
-        raise HarnessError("usage: init <client> [--root DIR]")
+    root = option(argv, "--root")
+    config = option(argv, "--config")
+    if len(argv) != 1:
+        raise HarnessError("usage: init <client> [--root DIR] [--config client.config.yaml]")
     root = root or Path(os.environ.get("HARNESS_WORKSPACES") or HARNESS_ROOT.parent / "workspaces")
-    print(init(argv[0], root.resolve()))
+    print(init(argv[0], root.resolve(), config))
 
 
 main(run)

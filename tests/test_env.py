@@ -80,6 +80,7 @@ class Up(unittest.TestCase):
             self.assertIn("%s: port %d healthy" % (name, state["ports"][name]), done.stdout)
         self.assertTrue(is_held(state["ports"]["api"]))
         self.assertTrue((ws / ".worktrees/hello/svc/seed.marker").exists())
+        self.assertEqual((ws / ".worktrees/hello/svc/install.marker").read_text(), "installed\n", "install ran when the worktree was created")
         log = (ws / ".run/hello/web.log").read_text()
         self.assertIn("[REDACTED DB_PASSWORD]", log)
         self.assertNotIn(SECRET, log)
@@ -92,6 +93,9 @@ class Up(unittest.TestCase):
             self.assertFalse(is_held(port))
         self.assertEqual(load_state(ws, "hello")["ports"], {})
         self.assertTrue((ws / ".worktrees/hello/svc").exists())
+        self.assertEqual(run("cleanup", "hello", ws=ws).returncode, 0)
+        self.assertEqual(run("up", "hello", ws=ws).returncode, 0)
+        self.assertEqual((ws / ".worktrees/hello/svc/install.marker").read_text(), "installed\n", "install runs once per worktree, not per up")
         self.assertEqual(run("cleanup", "hello", ws=ws).returncode, 0)
 
         self.assertEqual(run("close", "hello", ws=ws).returncode, 0)
@@ -192,6 +196,14 @@ class Up(unittest.TestCase):
         self.assertLess(time.monotonic() - t0, 8)
         self.assertIn("stack web exited with code 3", done.stderr)
         self.assertIn("boom", done.stderr)
+
+    def test_install_failure_fails_at_the_environment_step(self):
+        ws = self.workspace(api_install="echo no lockfile; exit 2")
+        done = run("up", "hello", ws=ws)
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("stack api: install failed with code 2", done.stderr)
+        self.assertIn("no lockfile", done.stderr)
+        self.assertFalse((ws / ".run/hello").exists())
 
     def test_seed_failure_fails_the_run(self):
         ws = self.workspace(api_seed="echo no fixtures; false")

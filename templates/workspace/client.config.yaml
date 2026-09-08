@@ -1,4 +1,8 @@
 client: <client>
+# repos: one url per repo the stacks name; init --config and link clone what is missing
+# repos:
+#   frontend: git@github.com:<client>/frontend.git
+#   backend: git@github.com:<client>/backend.git
 stacks:
   frontend:
     repo: frontend
