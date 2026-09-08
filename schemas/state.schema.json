@@ -103,7 +103,13 @@
         "commit": { "$ref": "#/$defs/sha" },
         "reason": { "type": "string", "minLength": 1 },
         "last_error": { "type": "string", "maxLength": 2000 },
-        "ask": { "$ref": "urn:harness:result#/$defs/ask" }
+        "ask": { "$ref": "urn:harness:result#/$defs/ask" },
+        "answer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["letter", "text"],
+          "properties": { "letter": { "enum": ["A", "B", "C"] }, "text": { "type": "string", "minLength": 1 } }
+        }
       },
       "allOf": [
         {

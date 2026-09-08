@@ -73,6 +73,8 @@ def assemble(ws, slug, subtask_id):
            "work in: " + str(stack_dir(ws, cfg, slug, name).relative_to(ws)),
            "files, open only these:"]
     out += ["  " + worktree_path(f, slug, cfg) for f in st.get("files", [])]
+    if st.get("answer"):
+        out.append("answer from Ali to your question: %s. %s" % (st["answer"]["letter"], st["answer"]["text"]))
     out += ["depends on this: " + (", ".join(dependents) or "none"),
             "line budget: %s      token budget: %d" % (st.get("line_budget", "unset"), tokens),
             "", "## Exit criteria"]

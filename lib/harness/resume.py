@@ -40,7 +40,7 @@ def reconcile(ws, cfg, slug, state):
     held = [name for name, port in state["ports"].items() if is_held(port)]
     if held:
         notes.append("ports still held for %s; stacks restart on fresh ports" % ", ".join(held))
-    if state["phase"] in ("build", "qa"):
+    if state["phase"] in ("build", "qa", "delivery", "finished"):
         state["phase"] = "safety_net"
         notes.append("phase: safety net reruns before build continues")
     return notes
