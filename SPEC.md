@@ -69,6 +69,8 @@ client    → the client's stacks (their repos). Receives feature code only.
 
 ### 2.2 How the harness reaches Claude Code
 
+**Nothing resolves a path from the working directory.** Every tool takes the workspace root as an explicit argument or reads it from `HARNESS_WORKSPACE`, and refuses when it has neither. An agent's environment block names the directory its session started in, which is not the workspace, and an agent told in prose to "run from the workspace root" will `cd` to the wrong one and exit 127. That failure took three launches of the dry run and it is not fixable by rewording the instruction. The rule is pillar one again: a location that must be correct is passed, not described.
+
 Claude Code loads workflows, agents and skills from `.claude/` in the working directory. The harness repo ships them under `harness/claude/{workflows,agents,skills}`. The workspace's `.claude/` links to those. A `harness/bin/link` script creates the links. Updating the harness = `git pull` in `harness/` and `/reload-skills`.
 
 No `CLAUDE.md` inside any client repo. Ever.
@@ -215,7 +217,8 @@ Work:
 - Write the QA journey as a runnable script in `journey.md`: the end-to-end path a user takes through the feature, step by step, with the observable result of each step. Phase 5 executes this, not a paraphrase of the spec. For a `service` feature the steps are API calls; for `ui` and `mixed` they are browser actions.
 - Write `plan.md`. It is the only place the plan lives.
 
-- Audit the spec while planning. Every time a sub-task needs a fact the spec and design do not state, write the question and the answer the planner chose into `spec-gaps.md`: what was missing, what was assumed, and what it affects. This is not a blocker list, it is a disclosure list.
+- **Parse-time check on every criterion's verb.** A criterion naming a runner the stack config does not define (`browser …` where no browser command exists) is a parse failure at second zero, quoting the line. Otherwise it becomes a sub-task that cannot pass, discovered hours later by a worker who then writes something else under that name.
+- Audit the spec while planning. Every time a sub-task needs a fact the spec and design do not state, write the question **and the answer the planner chose** into `spec-gaps.md`: what was missing, what was assumed, and what it affects. Both halves are required. A gaps file holding only questions produces a report whose "Assumptions I made" section lists things nobody assumed, which is worse than an empty section because it reads as disclosure. This is not a blocker list, it is a disclosure list.
 
 - Keep the plan bounded: **20 sub-tasks maximum**. A feature that needs more is more than one feature, and saying so at the checkpoint costs a conversation. Discovering it at hour four costs the run.
 
@@ -241,7 +244,7 @@ In v1 a silent spec produced a stop, and the run waited for Ali. In v2 the build
 ### Phase 3: Safety net
 
 Work:
-- **Run the client's own test suite first**, if they have one, on the untouched base branch. Record what is already red in `state.json` as the inherited baseline. Nothing in it is fixed and nothing in it blocks the run, but a test that was green at the start and is red at the end is a regression the harness caused. This is the only coverage of code outside the map, which is where legacy breaks.
+- **Run the client's own test suite first**, if they have one, on the untouched base branch. Record **the failing tests by name** in `state.json` as the inherited baseline. A directory name is not a baseline: the whole purpose is to tell, at QA, which red is the client's and which is ours, and `["tests"]` cannot answer that. Nothing in it is fixed and nothing in it blocks the run, but a test that was green at the start and is red at the end is a regression the harness caused. This is the only coverage of code outside the map, which is where legacy breaks.
 - For every zone in the code map, write regression tests in `product/tests/` that pin current behaviour. Backend: unit/integration on existing endpoints and services. Frontend: Playwright on existing flows in the touched screens.
 - Run them on the untouched code. A test that fails here was written wrong, and the test-writer fixes it **in this phase only**.
 - **Prove the net is not vacuous.** For each zone, break the behaviour the test pins (change a return value, a status code, a rendered field), confirm at least one test goes red, restore. A zone where nothing goes red has no net, and the test-writer rewrites it before the phase can exit. A test suite that cannot fail proves nothing, and an agent writing its own tests produces those by default.
@@ -326,6 +329,8 @@ Split the work, because most of an AI sub-task is ordinary code:
 - The criterion is a pass rate over that set with a floor from the plan, run with temperature pinned and the set seeded. Below the floor, the sub-task fails and retries like any other.
 - **The floor is never 100%.** A sub-task whose behaviour must be exactly right every time is a sub-task that should not be an LLM call, and the plan says so instead of pretending.
 - Failures are recorded as the failing examples, not as a score. A score tells the next attempt nothing.
+
+A design that cannot support a visual diff, a wireframe or a block mockup, is declared as `design.comparable: false` in the config and recorded as a gap. The planner does not get to decide silently that a `ui` feature skips its visual criterion: a kind that activates a check and a plan that omits it must disagree loudly, or the kind means nothing.
 
 If the behaviour cannot be expressed as properties over examples, it is not a build sub-task. It goes to Ali as a design question at plan time, in `spec-gaps.md`.
 
@@ -412,7 +417,7 @@ Which agents get activated is decided by which stacks appear in the plan. A clie
     { "id": "st-02", "stack": "frontend", "status": "blocked", "reason": "oracle",
       "attempts": 3, "interruptions": 0 }
   ],
-  "client_test_baseline": { "backend": ["<already red at start>"] },
+  "client_test_baseline": { "backend": ["<full test name, one per failing test>"] },
   "decisions": ["..."],
   "frictions": ["..."],
   "accepted_gaps": []
@@ -601,7 +606,10 @@ The one artefact Ali reads every feature. Fixed shape, in this order:
 <feature> — <done | done with gaps | partial>
 
 What works now.            plain sentences, feature vocabulary, what he can go and try
-What didn't land.          blocked and skipped sub-tasks, one line each, in plain words
+What didn't land.          blocked, skipped and still-pending sub-tasks, one line each, in
+                           plain words. Every sub-task appears in exactly one of the two
+                           blocks. A run that stopped early otherwise reports nothing landed
+                           and nothing missing on the same page.
 Assumptions I made.        from spec-gaps.md and decisions.md, only the ones that shaped
                            the result — not the whole log
 What it cost.              tokens, wall time, sub-tasks, attempts, against the last three runs
@@ -655,6 +663,9 @@ The retro edits the engine with no human review, and its own tests only cover me
 - Every retro push is tagged `retro/<slug>` on the harness repo. The tag is the rollback point, and `state.json` already records the harness commit each run started from.
 - **The branch is pushed first, and the tag only after that push succeeds.** A tag pushed on its own points at commits the remote holds on no branch: invisible to anyone cloning, un-fetched by default, and still picked up by the rollback search. The next rollback then targets a commit that does not exist locally. Order the two pushes and delete the tag locally if the branch push is refused.
 - The first thing the retro does on the next run is compare that run's totals against the median of the previous three **in the same workspace**: tokens, wall time, blocked count, attempts per sub-task. Cost varies more between clients than between harness versions, so a cross-client comparison is noise wearing the shape of a signal.
+- **The retro never moves the workspace's `harness/` checkout.** It works in its own clone, commits and pushes there. A retro that commits in place puts `harness/` ahead of `product/harness.pin`, and the pin check then refuses every tool in that workspace, including `report`, which is how the dry run lost its own conclusion. Ali adopts the retro with `bin/pin` when he chooses to.
+- **A friction caused by workspace configuration is reported, not fixed in the engine.** A missing credential or an unset path is Ali's to correct; generalising it into an engine change puts one workspace's setup into every client's harness.
+- **The runtime may refuse to spawn an agent**, on a classifier or otherwise, with zero tool uses. That is not a failed attempt and not a blocked sub-task. It is retried once, then recorded as a friction with `reason: runtime`, and the run continues. Nothing in the work caused it and nothing in the work fixes it.
 - Below three runs in the workspace there is no baseline and no comparison. The retro says so in one line rather than reasoning from one data point.
 - A run more than 50% worse on any of those, with no matching growth in feature size, is a **suspected regression**. The retro does not decide it caused it. It writes the finding at the top of `retro.md`, names the harness commits in that window, and appends to `OPEN_QUESTIONS.md`.
 - `harness/bin/rollback [<tag>]` resets the engine to a previous retro tag, defaulting to the newest `retro/*` tag **strictly behind HEAD**. When HEAD itself carries a tag, that tag is the run being rolled back and the target is the one before it. Ali runs it. Rolling back is a revert commit, never a force-push, so no other workspace loses history.
@@ -715,6 +726,7 @@ Two files the harness maintains so a conversation about the harness can start wi
 ## 17. Open decisions (v1 defaults, revisit in retro)
 
 - Reviewer as separate agent vs second prompt to the same worker. v1: separate agent (cleaner adversarial stance, costs one extra spawn).
+- **Measure input tokens, not just output.** The dry run spent 1.74M input tokens against 27k output on a single agent. A cost log built from output deltas measures the cheap half and reports a run that burned a window as nearly free, which makes pillar four unenforceable.
 - Criteria runner model. v1: session model; try a smaller one in a later feature.
 - Visual region mapping: hand-made regions file vs derived from Figma node tree. v1: hand-made, exported with the design.
 - Harness in workspace: submodule vs plain clone pinned to a commit. v1: plain clone plus a pinned sha in `state.json`; simpler on the VPS.
@@ -727,7 +739,8 @@ Two files the harness maintains so a conversation about the harness can start wi
 
 ## 19. Definition of done for the harness itself
 
-- A new workspace can be created from a template with `harness/bin/init <client>`.
+- A new workspace can be created from a template with `harness/bin/init <client>`. `init` clones the harness at the pin, **installs the harness's own dependencies**, **clones every repo named in `client.config.yaml` into `repos/`**, and writes `product/harness.pin`. A layout that is described but not created is a manual step wearing the word automatic.
+- **Worktree creation runs `commands.install` for that stack.** A fresh worktree has no installed dependencies, so the first command a worker runs fails for a reason unrelated to its sub-task. `install` is in the config schema precisely so something runs it.
 - **The pin is a file, not a convention.** `product/harness.pin` holds the harness commit the workspace runs. `init` writes it, `link` verifies it, and every workflow refuses to start when `harness/` is at a different commit. Without that check a workspace silently drifts onto whatever the last `git pull` brought, and the harness commit recorded in state describes a run that nobody can reproduce.
 - Ali moves a workspace forward with `harness/bin/pin <client> [<commit>]`, defaulting to the harness remote's HEAD. Upgrading is a deliberate act per workspace, so a bad retro cannot reach every client at once.
 - Workspaces are found under `--root`, else `HARNESS_WORKSPACES`, else `<harness>/../workspaces`. Same resolution order as `init`, since a command that finds a workspace where another one put it is one less thing to remember.
