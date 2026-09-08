@@ -6,10 +6,10 @@ const flag = args.indexOf("--schema");
 const explicit = flag >= 0 ? args.splice(flag, 2)[1] : undefined;
 const [file] = args;
 
-if (!file || args.length !== 1) fail(2, "usage: validate <path> [--schema config|state]");
+if (!file || args.length !== 1) fail(2, "usage: validate <path> [--schema config|state|result]");
 const schema = explicit ?? schemaFor(file);
-if (!["config", "state"].includes(schema)) {
-  fail(2, explicit ? `unknown schema "${explicit}"; use config or state` : `${file}: cannot tell the schema from the file name; pass --schema config|state`);
+if (!["config", "state", "result"].includes(schema)) {
+  fail(2, explicit ? `unknown schema "${explicit}"; use config, state or result` : `${file}: cannot tell the schema from the file name; pass --schema config|state|result`);
 }
 
 let result;

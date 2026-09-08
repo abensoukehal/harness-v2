@@ -1,13 +1,16 @@
-"""Worker briefing from config, conventions and state (7.1). Reads nothing under secrets/."""
+"""One worker's briefing for one sub-task (7.1). Criteria come from state.json, never plan.md. Nothing under secrets/ is read."""
 import re
 
 from . import HarnessError
 from .config import load_config, load_state, stack_dir
+from .plan import role_of
 
-PROHIBITIONS = [
-    "No new file without a one-line justification in the report.",
-    "No new abstraction layer without a one-line justification in the report.",
-    "No new dependency without a one-line justification in the report.",
+DEFAULT_CAP = 12000
+RULES = [
+    "No new file, abstraction layer or dependency without a one-line justification in the report.",
+    "Never edit product/tests/. Never start or stop a stack: return restart instead.",
+    "Grep for the symbol, read about 50 lines around it. Whole file only under 150 lines.",
+    "Return the structured result. Prose is refused.",
 ]
 
 
@@ -23,9 +26,31 @@ def sections(text):
     return {k: "\n".join(v).strip() for k, v in out.items()}
 
 
-def criterion_line(c):
-    rest = " ".join("%s=%s" % (k, v) for k, v in c.items() if k != "kind")
-    return ("- %s %s" % (c["kind"], rest)).rstrip()
+def criterion_text(c, expand):
+    k = c["kind"]
+    if k == "test":
+        return "test " + c["pattern"]
+    if k == "browser":
+        return "browser " + c["script"]
+    if k == "http":
+        text = "http %s %s %d" % (c["method"], expand(c["url"]), c["expect_status"])
+        return text + (", %s = %s" % (c["json_path"], c["value"]) if "json_path" in c else "")
+    if k == "log":
+        return 'log %s %s "%s"' % (c["stack"], "present" if c["present"] else "absent", c["pattern"])
+    if k == "visual":
+        return "visual %s %s" % (c["region"], c["reference"])
+    if k == "examples":
+        return "examples %s %s" % (c["set"], c["floor"])
+    return k
+
+
+def worktree_path(path, slug, cfg):
+    """A plan path under repos/<repo>/ becomes the same path inside the feature worktree."""
+    for stack in cfg["stacks"].values():
+        repo = stack["repo"]
+        if repo and (path == "repos/" + repo or path.startswith("repos/%s/" % repo)):
+            return ".worktrees/%s/%s%s" % (slug, repo, path[len("repos/" + repo):])
+    return path
 
 
 def assemble(ws, slug, subtask_id):
@@ -39,35 +64,56 @@ def assemble(ws, slug, subtask_id):
     stack = cfg["stacks"][name]
     ports = state["ports"]
     expand = lambda text: re.sub(r"\$\{PORT_(\w+)\}", lambda m: str(ports.get(m.group(1).lower(), m.group(0))), text)
+    dependents = [s["id"] for s in state["subtasks"] if subtask_id in s.get("depends_on", [])]
+    tokens = st.get("token_budget") or max(1, cfg["budget"]["tokens_per_feature"] // max(1, len(state["subtasks"])))
 
-    profile = ["# Technical profile", "stack: " + name]
-    for key in ["framework", "package_manager", "logs"]:
+    out = ["# Mission %s · %s" % (st["id"], st.get("goal", "")),
+           "feature: %s   branch: %s" % (slug, state["branch"]),
+           "stack: %s (%s)" % (name, role_of(name, stack)),
+           "work in: " + str(stack_dir(ws, cfg, slug, name).relative_to(ws)),
+           "files, open only these:"]
+    out += ["  " + worktree_path(f, slug, cfg) for f in st.get("files", [])]
+    out += ["depends on this: " + (", ".join(dependents) or "none"),
+            "line budget: %s      token budget: %d" % (st.get("line_budget", "unset"), tokens),
+            "", "## Exit criteria"]
+    out += ["- " + criterion_text(c, expand) for c in st["exit_criteria"]]
+
+    out += ["", "## Stack"]
+    for key in ["framework", "package_manager"]:
         if key in stack:
-            profile.append("%s: %s" % (key, stack[key]))
-    profile.append("directory: " + str(stack_dir(ws, cfg, slug, name).relative_to(ws)))
+            out.append("%s: %s" % (key, stack[key]))
+    commands = {k: v for k, v in stack["commands"].items() if k in ("test", "lint", "typecheck", "build")}
+    if commands:
+        out.append("commands:")
+        out += ["  %s: %s" % (k, expand(v)) for k, v in commands.items()]
+    runner = cfg["test_runner"].get(name)
+    if runner:
+        out.append("test runner: " + expand(runner))
     if "dev_url" in stack:
-        profile.append("dev_url: " + expand(stack["dev_url"]))
-    profile.append("health: " + ("log" if "log" in stack["health"] else "http"))
-    profile.append("commands:")
-    profile += ["  %s: %s" % (k, expand(v)) for k, v in stack["commands"].items()]
-    profile.append("ports: " + ", ".join("PORT_%s=%d" % (n.upper(), p) for n, p in sorted(ports.items())))
+        out.append("dev url: " + expand(stack["dev_url"]))
+    out.append("ports: " + " ".join("PORT_%s=%d" % (n.upper(), p) for n, p in sorted(ports.items())))
+    out.append("log: .run/%s/%s.log" % (slug, name))
 
-    conventions = ["# Conventions"]
+    out += ["", "## Conventions"]
     path = ws / "product" / "conventions.md"
     found = sections(path.read_text()) if path.exists() else {}
     for heading in ["all", name]:
         if found.get(heading):
-            conventions += ["## " + heading, found[heading]]
-    if len(conventions) == 1:
-        conventions.append("none recorded")
+            out += ["### " + heading, found[heading]]
+    if out[-1] == "## Conventions":
+        out.append("none recorded")
 
-    dependents = [s["id"] for s in state["subtasks"] if subtask_id in s.get("depends_on", [])]
-    budget = st.get("token_budget") or max(1, cfg["budget"]["tokens_per_feature"] // max(1, len(state["subtasks"])))
-    mission = ["# Mission", "id: " + st["id"], "goal: " + st.get("goal", ""),
-               "files:"] + ["  " + f for f in st.get("files", [])] + [
-               "criteria:"] + [criterion_line(c) for c in st.get("exit_criteria", [])] + [
-               "line_budget: %s" % st.get("line_budget", "unset"),
-               "token_budget: %d" % budget,
-               "depends_on_this: " + (", ".join(dependents) or "none"),
-               "prohibitions:"] + ["  " + p for p in PROHIBITIONS]
-    return "\n".join(profile + [""] + conventions + [""] + mission) + "\n"
+    examples = [c for c in st["exit_criteria"] if c["kind"] == "examples"]
+    if examples:
+        out += ["", "## Behaviour contract"]
+        out += ["set: %s   floor: %s   temperature pinned, set seeded" % (c["set"], c["floor"]) for c in examples]
+        out.append("Report failures as the failing examples, never as a score.")
+
+    out += ["", "## Rules"] + ["- " + r for r in RULES]
+    text = "\n".join(out) + "\n"
+    cap = cfg["budget"].get("briefing_chars", DEFAULT_CAP)
+    if len(text) > cap:
+        conventions = len(path.read_text()) if path.exists() else 0
+        raise HarnessError("briefing for %s is %d characters, cap %d; conventions.md is %d characters: consolidate it"
+                           % (subtask_id, len(text), cap, conventions))
+    return text

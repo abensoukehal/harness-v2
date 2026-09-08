@@ -14,7 +14,7 @@ export const meta = {
 const slug = typeof args === 'string' ? args : args && args.slug
 if (!slug) throw new Error('usage: /harness-build <slug>')
 const FEATURE = `product/features/${slug}`
-const MAX_NEEDS = 3
+const MAX_RESTARTS = 2
 const MAX_PARALLEL = 4
 const IO = 'Run shell commands in the workspace root. Write nothing except what the task says. '
 
@@ -27,9 +27,9 @@ const LAUNCH = {
   type: 'object',
   properties: {
     plan_ok: { type: 'boolean' }, plan_error: { type: 'string' }, plan: { type: 'object' },
-    state_exists: { type: 'boolean' }, state: { type: 'object' },
+    state_exists: { type: 'boolean' }, state: { type: 'object' }, result_schema: { type: 'object' },
   },
-  required: ['plan_ok', 'state_exists'],
+  required: ['plan_ok', 'state_exists', 'result_schema'],
 }
 const STATE = { type: 'object', properties: { state: { type: 'object' } }, required: ['state'] }
 const NET = {
@@ -42,15 +42,6 @@ const NET = {
   required: ['baseline', 'zones'],
 }
 const strings = { type: 'array', items: { type: 'string' } }
-const WORKER = {
-  type: 'object',
-  properties: {
-    status: { enum: ['done', 'blocked', 'needs'] }, attempts: { type: 'integer' }, files: strings, decisions: strings, frictions: strings,
-    reason: { type: 'string' }, last_error: { type: 'string' }, needs_path: { type: 'string' }, needs_why: { type: 'string' },
-    lines_added: { type: 'integer' }, report: { type: 'string' },
-  },
-  required: ['status', 'report'],
-}
 const REVIEW = {
   type: 'object',
   properties: {
@@ -87,19 +78,20 @@ const clip = (text) => (text || '').split('\n').slice(-10).join('\n').slice(0, 2
 phase('Launch')
 const launch = await agent(
   `${IO}Run \`harness/bin/plan ${slug}\`. Non-zero exit: plan_ok false, plan_error = its stderr verbatim. Exit 0: plan_ok true, plan = its stdout parsed as JSON, verbatim. ` +
-  `Then run \`harness/bin/state get ${slug}\`: non-zero exit gives state_exists false; otherwise state_exists true and state = its JSON verbatim.`,
+  `Then run \`harness/bin/state get ${slug}\`: non-zero exit gives state_exists false; otherwise state_exists true and state = its JSON verbatim. ` +
+  'Then result_schema = the JSON in harness/schemas/worker.result.schema.json, verbatim.',
   { label: 'launch', schema: LAUNCH, effort: 'low' })
 if (!launch) throw new Error('launch agent returned nothing')
 if (!launch.plan_ok) throw new Error(`plan.md refused:\n${launch.plan_error}`)
 if (!launch.state_exists) throw new Error(`no state for ${slug}: run /harness-plan ${slug} first`)
 const plan = launch.plan
 const cfg = plan.config
-const roles = Object.fromEntries(plan.subtasks.map((s) => [s.id, s.role]))
+const WORKER = launch.result_schema
 const model = (role) => (cfg.models && cfg.models[role] ? { model: cfg.models[role] } : {})
 let state = launch.state
 const resuming = state.subtasks.length > 0
 if (resuming) {
-  log(`state holds ${state.subtasks.length} sub-tasks: state wins, plan.md supplies roles only`)
+  log(`state holds ${state.subtasks.length} sub-tasks: state wins over plan.md`)
 } else {
   const subtasks = plan.subtasks.map(({ role, ...rest }) => rest)
   await update({ kind: plan.kind, subtasks, phase: 'safety_net' })
@@ -132,8 +124,7 @@ try {
   const runSubtask = async (id) => {
     const started = await update({ subtasks: [{ id, status: 'running' }] }, 'Build')
     const spentBefore = budget.spent()
-    let files = byId()[id].files || []
-    let needs = 0
+    let restarts = 0
     let worker = null
     let review = null
     let outcome = { status: 'blocked', reason: 'worker', last_error: '' }
@@ -141,17 +132,19 @@ try {
       while (true) {
         const brief = await io(`Run \`harness/bin/briefing ${slug} ${id}\`; output = its stdout verbatim.`, { label: `${id} briefing`, phase: 'Build' })
         if (!brief || !brief.ok) { outcome = { status: 'blocked', reason: 'briefing', last_error: clip(brief && brief.error) }; break }
-        worker = await agent(brief.output, { agentType: `${roles[id]}-worker`, label: `${id} ${roles[id]}`, phase: 'Build', schema: WORKER, ...model('worker') })
+        worker = await agent(brief.output, { agentType: 'worker', label: `${id} worker`, phase: 'Build', schema: WORKER, ...model('worker') })
         if (!worker) { outcome = { status: 'blocked', reason: 'worker', last_error: 'worker returned nothing' }; break }
-        if (worker.status === 'needs') {
-          needs += 1
-          if (needs > MAX_NEEDS || !worker.needs_path) { outcome = { status: 'blocked', reason: 'needs', last_error: clip(`${worker.needs_path}: ${worker.needs_why}`) }; break }
-          files = [...files, worker.needs_path]
-          await update({ subtasks: [{ id, files }] }, 'Build')
-          log(`${id} needs ${worker.needs_path}: added, respawning`)
+        if (worker.status === 'restart') {
+          restarts += 1
+          if (restarts > MAX_RESTARTS) { outcome = { status: 'blocked', reason: 'environment', last_error: clip(`restart of ${worker.stack} requested ${restarts} times`) }; break }
+          const r = await io(`Run \`harness/bin/restart ${slug} ${worker.stack}\`; ok by exit code; output = the last 20 lines.`, { label: `restart ${worker.stack}`, phase: 'Build' })
+          if (!r || !r.ok) { outcome = { status: 'blocked', reason: 'environment', last_error: clip(r && (r.error || r.output)) }; break }
+          log(`${id} restarted ${worker.stack}, respawning`)
           continue
         }
-        if (worker.status === 'blocked') { outcome = { status: 'blocked', reason: worker.reason || 'worker', last_error: clip(worker.last_error) }; break }
+        if (worker.status === 'needs') { outcome = { status: 'blocked', reason: 'needs', last_error: clip(worker.report), ask: worker.ask }; break }
+        if (worker.status === 'failed') { outcome = { status: 'blocked', reason: 'criteria', last_error: clip(worker.last_error) }; break }
+        if (worker.status === 'blocked') { outcome = { status: 'blocked', reason: worker.reason, last_error: clip(worker.report) }; break }
         review = await agent(
           `${brief.output}\n\n# Worker report\n${worker.report}\nFiles touched: ${(worker.files || []).join(', ')}`,
           { agentType: 'reviewer', label: `${id} review`, phase: 'Build', schema: REVIEW, ...model('reviewer') })
@@ -223,7 +216,7 @@ try {
       if (!st) { log(`fix ${fixes}/${cfg.max_fixes}: ${f.subtask} is not a sub-task, left as a gap`); continue }
       const brief = await io(`Run \`harness/bin/briefing ${slug} ${f.subtask}\`; output = its stdout verbatim.`, { label: `${f.subtask} briefing` })
       const mission = `${brief && brief.output}\n\n# QA failure to fix\nkind: ${f.kind}\nexpected: ${f.expected || ''}\nobserved: ${f.observed || ''}\n${f.detail}\nFix this failure only.`
-      const w = await agent(mission, { agentType: `${roles[f.subtask]}-worker`, label: `fix ${f.subtask}`, schema: WORKER, ...model('worker') })
+      const w = await agent(mission, { agentType: 'worker', label: `fix ${f.subtask}`, schema: WORKER, ...model('worker') })
       let r = null
       if (w && w.status === 'done') {
         r = await agent(`${mission}\n\n# Worker report\n${w.report}`, { agentType: 'reviewer', label: `fix ${f.subtask} review`, schema: REVIEW, ...model('reviewer') })

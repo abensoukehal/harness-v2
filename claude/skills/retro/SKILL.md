@@ -15,7 +15,7 @@ Engine edits go under `harness/`. Product writes: `retro.md` and `conventions.md
 6. Write each fix into the harness file that owns the subject by rewriting the existing rule in place. Add a rule only for a subject no file covers. Stay under every file's cap; consolidate at the cap. A file that grew across three consecutive retros while none shrank: entry in `OPEN_QUESTIONS.md`, no edit.
 7. Rewrite `harness/STATE.md` when the engine changed: what it is now, phases, agents, rules in force, known limits.
 8. In `harness/`: run `tests/hygiene.sh` and `npm test`. Red: fix or revert the edit. Never commit red.
-9. Commit, message stating the change without any client name. Tag `retro/<slug>`. Push. Rejected: pull, redo step 4 on the new commits, resolve each conflict by reading the remote change against your intent (drop yours when covered, combine when compatible, never a blind merge), rerun step 8, push again. Third rejection: write the pending diff into `retro.md` under `UNPUSHED`.
+9. Commit, message stating the change without any client name. Run `harness/bin/tag-push <slug>`: it tags, pushes the branch, then the tag, and deletes the tag when the branch push is refused. Refused: pull, redo step 4 on the new commits, resolve each conflict by reading the remote change against your intent (drop yours when covered, combine when compatible, never a blind merge), rerun step 8, run it again. Third refusal: write the pending diff into `retro.md` under `UNPUSHED`.
 10. Write `product/features/<slug>/retro.md`: findings, edits made, frictions dropped, open questions.
 
 Rollback is Ali's: `harness/bin/rollback`.

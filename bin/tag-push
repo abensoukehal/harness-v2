@@ -1,0 +1,22 @@
+#!/usr/bin/env python3
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+
+from harness import HARNESS_ROOT, HarnessError, check_slug, main
+from harness.rollback import tag_push
+
+
+def run(argv):
+    root = HARNESS_ROOT
+    if "--repo" in argv:
+        i = argv.index("--repo")
+        root = Path(argv[i + 1]).resolve()
+        del argv[i:i + 2]
+    if len(argv) != 1:
+        raise HarnessError("usage: tag-push <slug> [--repo DIR]")
+    print(tag_push(root, check_slug(argv[0])))
+
+
+main(run)

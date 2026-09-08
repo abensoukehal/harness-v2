@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "harness/client.config",
+  "$id": "urn:harness:config",
   "title": "client.config.yaml",
   "type": "object",
   "additionalProperties": false,
@@ -62,7 +62,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["tokens_per_feature"],
-      "properties": { "tokens_per_feature": { "type": "integer", "minimum": 1 } }
+      "properties": {
+        "tokens_per_feature": { "type": "integer", "minimum": 1 },
+        "briefing_chars": { "type": "integer", "minimum": 1000, "default": 12000 }
+      }
     },
     "qa": {
       "type": "object",

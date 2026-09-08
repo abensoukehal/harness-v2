@@ -39,3 +39,20 @@ def rollback(root, tag=None):
     git("add", "OPEN_QUESTIONS.md", cwd=root)
     git("commit", "-q", "-m", "Roll back engine to %s" % tag, cwd=root)
     return tag, commits
+
+
+def tag_push(root, slug):
+    """Tag HEAD retro/<slug>, push the branch, then the tag. A refused branch push deletes the tag (14.5)."""
+    tag = "retro/" + slug
+    branch = git("rev-parse", "--abbrev-ref", "HEAD", cwd=root)
+    if branch == "HEAD":
+        raise HarnessError("detached HEAD: check out the branch to push first")
+    if subprocess.run(["git", "rev-parse", "--verify", "--quiet", "refs/tags/" + tag], cwd=root, capture_output=True).returncode == 0:
+        raise HarnessError("tag %s exists; one retro tag per feature" % tag)
+    git("tag", tag, cwd=root)
+    pushed = subprocess.run(["git", "push", "origin", branch], cwd=root, capture_output=True, text=True)
+    if pushed.returncode:
+        git("tag", "-d", tag, cwd=root)
+        raise HarnessError("push of %s refused; tag %s deleted locally, nothing reached the remote:\n%s" % (branch, tag, pushed.stderr.strip()))
+    git("push", "origin", tag, cwd=root)
+    return tag

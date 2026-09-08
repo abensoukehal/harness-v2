@@ -26,10 +26,9 @@ class Corpus(unittest.TestCase):
         self.assertLess(total, CAP)
 
     def test_all_roles_present(self):
-        self.assertEqual([p.stem for p in AGENTS], ["ai-worker", "backend-worker", "frontend-worker", "mobile-worker",
-                                                    "planner", "qa", "retro", "reviewer", "test-writer"])
+        self.assertEqual([p.stem for p in AGENTS], ["planner", "qa", "retro", "reviewer", "test-writer", "worker"])
         self.assertEqual([p.parent.name for p in SKILLS], ["commit-hygiene", "communicate", "criteria-runner", "reduce",
-                                                           "retro", "visual-diff", "worker"])
+                                                           "retro", "visual-diff"])
 
     def test_agents_name_no_technology(self):
         for p in AGENTS:
@@ -40,6 +39,13 @@ class Corpus(unittest.TestCase):
         for p in AGENTS + SKILLS:
             m = JUSTIFICATION.search(p.read_text())
             self.assertIsNone(m, "%s explains itself with %r" % (p, m and m.group(0)))
+
+    def test_no_copied_preamble(self):
+        bodies = [p.read_text().split("---", 2)[2] for p in AGENTS]
+        for i, a in enumerate(bodies):
+            for b in bodies[i + 1:]:
+                shared = [line for line in a.splitlines() if len(line) > 40 and line in b.splitlines()]
+                self.assertEqual(shared, [], "agents share the line %r" % (shared and shared[0]))
 
     def test_frontmatter(self):
         for p in AGENTS:

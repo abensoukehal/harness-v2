@@ -98,6 +98,36 @@ class Up(unittest.TestCase):
         self.assertFalse((ws / ".worktrees/hello").exists())
         self.assertEqual(load_state(ws, "hello")["worktrees"], {})
 
+    def test_restart_keeps_the_port_and_takes_dependents_along(self):
+        ws = self.workspace()
+        self.assertEqual(run("up", "hello", ws=ws).returncode, 0)
+        ports = load_state(ws, "hello")["ports"]
+        pids = {n: (ws / ".run/hello" / (n + ".pid")).read_text() for n in ["api", "web", "db"]}
+        (ws / ".run/hello/web.log").write_text("OLD BOOT LINE\n" + (ws / ".run/hello/web.log").read_text())
+        done = run("restart", "hello", "web", ws=ws)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("web: port %d healthy" % ports["web"], done.stdout)
+        self.assertNotIn("api:", done.stdout)
+        self.assertNotEqual((ws / ".run/hello/web.pid").read_text(), pids["web"])
+        self.assertEqual((ws / ".run/hello/api.pid").read_text(), pids["api"])
+        self.assertEqual(load_state(ws, "hello")["ports"], ports)
+        self.assertNotIn("OLD BOOT LINE", (ws / ".run/hello/web.log").read_text())
+        self.assertIn("[REDACTED DB_PASSWORD]", (ws / ".run/hello/web.log").read_text())
+
+        done = run("restart", "hello", "api", ws=ws)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("api: port %d healthy" % ports["api"], done.stdout)
+        self.assertIn("web: port %d healthy" % ports["web"], done.stdout, "web depends on api and restarts with it")
+        self.assertNotIn("db:", done.stdout)
+        self.assertTrue(is_held(ports["api"]))
+        unknown = run("restart", "hello", "cache", ws=ws)
+        self.assertEqual(unknown.returncode, 1)
+        self.assertIn("unknown stack cache", unknown.stderr)
+        run("cleanup", "hello", ws=ws)
+        down = run("restart", "hello", "web", ws=ws)
+        self.assertEqual(down.returncode, 1)
+        self.assertIn("is not up", down.stderr)
+
     def test_never_healthy_fails_at_environment_step(self):
         ws = self.workspace(web_health='log: "will not appear"', web_timeout=2)
         state = load_state(ws, "hello")

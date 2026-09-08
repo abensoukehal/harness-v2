@@ -1,0 +1,22 @@
+#!/usr/bin/env python3
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+
+from harness import HarnessError, check_slug, find_workspace, main
+from harness.ask import render
+from harness.config import load_state
+
+
+def run(argv):
+    if len(argv) != 2:
+        raise HarnessError("usage: ask <slug> <sub-task id>")
+    state = load_state(find_workspace(), check_slug(argv[0]))
+    match = [s for s in state["subtasks"] if s["id"] == argv[1]]
+    if not match or "ask" not in match[0]:
+        raise HarnessError("sub-task %s has no ask recorded" % argv[1])
+    sys.stdout.write(render(match[0]["ask"]))
+
+
+main(run)

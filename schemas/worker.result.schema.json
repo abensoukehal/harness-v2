@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:harness:result",
+  "title": "worker result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "report", "files", "decisions", "frictions", "attempts"],
+  "properties": {
+    "status": { "enum": ["done", "failed", "blocked", "restart", "needs"] },
+    "report": { "type": "string", "minLength": 1, "maxLength": 600 },
+    "files": { "$ref": "#/$defs/strings" },
+    "decisions": { "$ref": "#/$defs/strings" },
+    "frictions": { "$ref": "#/$defs/strings" },
+    "attempts": { "type": "integer", "minimum": 1, "maximum": 3 },
+    "lines_added": { "type": "integer", "minimum": 0 },
+    "last_error": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "reason": { "enum": ["oracle", "budget", "environment", "missing_file"] },
+    "stack": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+    "ask": { "$ref": "#/$defs/ask" }
+  },
+  "allOf": [
+    { "if": { "properties": { "status": { "const": "done" } } }, "then": { "required": ["lines_added"] } },
+    { "if": { "properties": { "status": { "const": "failed" } } }, "then": { "required": ["last_error"] } },
+    { "if": { "properties": { "status": { "const": "blocked" } } }, "then": { "required": ["reason"] } },
+    { "if": { "properties": { "status": { "const": "restart" } } }, "then": { "required": ["stack"] } },
+    { "if": { "properties": { "status": { "const": "needs" } } }, "then": { "required": ["ask"] } }
+  ],
+  "$defs": {
+    "strings": { "type": "array", "items": { "type": "string" } },
+    "plain": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 400,
+      "pattern": "^(?![\\s\\S]*(/|\\.(py|js|ts|tsx|jsx|md|json|ya?ml|sh|sql|html|css|java|kt|swift|rb|go|rs)\\b))"
+    },
+    "ask": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["where", "stuck", "tried", "question", "options", "still_running", "detail"],
+      "properties": {
+        "where": { "$ref": "#/$defs/plain" },
+        "stuck": { "$ref": "#/$defs/plain" },
+        "tried": { "type": "array", "maxItems": 2, "items": { "$ref": "#/$defs/plain" } },
+        "question": { "$ref": "#/$defs/plain" },
+        "options": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["letter", "text", "recommended"],
+            "properties": {
+              "letter": { "enum": ["A", "B", "C"] },
+              "text": { "$ref": "#/$defs/plain" },
+              "recommended": { "type": "boolean" }
+            }
+          },
+          "contains": { "properties": { "recommended": { "const": true } }, "required": ["recommended"] },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        "still_running": { "$ref": "#/$defs/plain" },
+        "detail": { "type": "string", "minLength": 1, "maxLength": 200 }
+      }
+    }
+  }
+}

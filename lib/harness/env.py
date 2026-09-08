@@ -128,6 +128,65 @@ def seed(name, stack, cwd, env, logfile, keys, scrubber):
         raise HarnessError("stack %s: seed failed with code %d\n%s" % (name, code, tail(logfile, scrubber)))
 
 
+def dependents_of(stacks, names):
+    """names plus every stack that depends on them, transitively."""
+    wanted = set(names)
+    changed = True
+    while changed:
+        changed = False
+        for name, stack in stacks.items():
+            if name not in wanted and wanted & set(stack.get("depends_on", [])):
+                wanted.add(name)
+                changed = True
+    return wanted
+
+
+def start_stack(ws, cfg, state, slug, name, secrets, scrubber, rd, out):
+    stack = cfg["stacks"][name]
+    env = dict(os.environ)
+    env.update({"PORT_" + n.upper(): str(p) for n, p in state["ports"].items()})
+    env.update(secrets)
+    keys = list(secrets)
+    cwd = stack_dir(ws, cfg, slug, name)
+    if not cwd.is_dir():
+        raise HarnessError("stack %s: %s does not exist in the worktree" % (name, cwd.relative_to(ws)))
+    logfile = rd / (name + ".log")
+    proc = spawn(stack["commands"]["dev"], cwd, env, logfile, keys)
+    (rd / (name + ".pid")).write_text(str(proc.pid))
+    wait_healthy(name, stack, proc, logfile, cwd, env, scrubber)
+    if stack.get("seed"):
+        seed(name, stack, cwd, env, logfile, keys, scrubber)
+    out.write("%s: port %d healthy\n" % (name, state["ports"][name]))
+
+
+def restart(ws, slug, names, out=sys.stdout):
+    """Stop and respawn the named stacks and their dependents on the same ports, in start order (11.1)."""
+    cfg = load_config(ws)
+    state = load_state(ws, slug)
+    unknown = [n for n in names if n not in cfg["stacks"]]
+    if unknown:
+        raise HarnessError("unknown stack %s; config has %s" % (", ".join(unknown), ", ".join(sorted(cfg["stacks"]))))
+    rd = run_dir(ws, slug)
+    if not rd.exists() or set(state["ports"]) != set(cfg["stacks"]):
+        raise HarnessError("environment for %s is not up; run harness/bin/up %s" % (slug, slug))
+    per_stack, scrubber = load_secrets(ws, cfg)
+    targets = dependents_of(cfg["stacks"], names)
+    order = [n for n in start_order(cfg["stacks"]) if n in targets]
+    for name in order:
+        pidfile = rd / (name + ".pid")
+        if pidfile.exists():
+            kill_group(int(pidfile.read_text()), signal.SIGTERM)
+            deadline = time.monotonic() + STOP_GRACE_S
+            while time.monotonic() < deadline and kill_group(int(pidfile.read_text()), 0):
+                time.sleep(0.1)
+            kill_group(int(pidfile.read_text()), signal.SIGKILL)
+            pidfile.unlink()
+        (rd / (name + ".log")).write_text("")
+    for name in order:
+        start_stack(ws, cfg, state, slug, name, per_stack[name], scrubber, rd, out)
+    return order
+
+
 def up(ws, slug, out=sys.stdout):
     cfg = load_config(ws)
     state = load_state(ws, slug)
@@ -142,21 +201,7 @@ def up(ws, slug, out=sys.stdout):
     rd.mkdir(parents=True)
     try:
         for name in start_order(cfg["stacks"]):
-            stack = cfg["stacks"][name]
-            env = dict(os.environ)
-            env.update({"PORT_" + n.upper(): str(p) for n, p in state["ports"].items()})
-            env.update(per_stack[name])
-            keys = list(per_stack[name])
-            cwd = stack_dir(ws, cfg, slug, name)
-            if not cwd.is_dir():
-                raise HarnessError("stack %s: %s does not exist in the worktree" % (name, cwd.relative_to(ws)))
-            logfile = rd / (name + ".log")
-            proc = spawn(stack["commands"]["dev"], cwd, env, logfile, keys)
-            (rd / (name + ".pid")).write_text(str(proc.pid))
-            wait_healthy(name, stack, proc, logfile, cwd, env, scrubber)
-            if stack.get("seed"):
-                seed(name, stack, cwd, env, logfile, keys, scrubber)
-            out.write("%s: port %d healthy\n" % (name, state["ports"][name]))
+            start_stack(ws, cfg, state, slug, name, per_stack[name], scrubber, rd, out)
     except BaseException:
         stop_all(ws, slug)
         raise

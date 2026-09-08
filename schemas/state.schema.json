@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "harness/state",
+  "$id": "urn:harness:state",
   "title": "state.json",
   "type": "object",
   "additionalProperties": false,
@@ -90,7 +90,8 @@
         },
         "commit": { "$ref": "#/$defs/sha" },
         "reason": { "type": "string", "minLength": 1 },
-        "last_error": { "type": "string", "maxLength": 2000 }
+        "last_error": { "type": "string", "maxLength": 2000 },
+        "ask": { "$ref": "urn:harness:result#/$defs/ask" }
       },
       "allOf": [
         {
