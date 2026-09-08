@@ -3,3 +3,4 @@
 .claude/settings.local.json
 secrets/
 node_modules/
+.claude/scheduled_tasks.lock
