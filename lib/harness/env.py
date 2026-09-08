@@ -141,7 +141,7 @@ def dependents_of(stacks, names):
     return wanted
 
 
-def start_stack(ws, cfg, state, slug, name, secrets, scrubber, rd, out):
+def start_stack(ws, cfg, state, slug, name, secrets, scrubber, rd, out, do_seed=True):
     stack = cfg["stacks"][name]
     env = dict(os.environ)
     env.update({"PORT_" + n.upper(): str(p) for n, p in state["ports"].items()})
@@ -154,13 +154,14 @@ def start_stack(ws, cfg, state, slug, name, secrets, scrubber, rd, out):
     proc = spawn(stack["commands"]["dev"], cwd, env, logfile, keys)
     (rd / (name + ".pid")).write_text(str(proc.pid))
     wait_healthy(name, stack, proc, logfile, cwd, env, scrubber)
-    if stack.get("seed"):
+    if do_seed and stack.get("seed"):
         seed(name, stack, cwd, env, logfile, keys, scrubber)
-    out.write("%s: port %d healthy\n" % (name, state["ports"][name]))
+    out.write("%s: port %d healthy%s\n" % (name, state["ports"][name], " (reseeded)" if do_seed and stack.get("seed") else ""))
 
 
-def restart(ws, slug, names, out=sys.stdout):
-    """Stop and respawn the named stacks and their dependents on the same ports, in start order (11.1)."""
+def restart(ws, slug, names, reseed=False, subtask=None, out=sys.stdout):
+    """Stop and respawn the named stacks and their dependents on the same ports, in start order (11.1).
+    Seeding runs only with reseed, and the reseed is recorded in state."""
     cfg = load_config(ws)
     state = load_state(ws, slug)
     unknown = [n for n in names if n not in cfg["stacks"]]
@@ -183,7 +184,10 @@ def restart(ws, slug, names, out=sys.stdout):
             pidfile.unlink()
         (rd / (name + ".log")).write_text("")
     for name in order:
-        start_stack(ws, cfg, state, slug, name, per_stack[name], scrubber, rd, out)
+        start_stack(ws, cfg, state, slug, name, per_stack[name], scrubber, rd, out, do_seed=reseed)
+    if reseed:
+        state.setdefault("reseeds", []).extend({"stack": n, **({"subtask": subtask} if subtask else {})} for n in order)
+        save_state(ws, slug, state)
     return order
 
 

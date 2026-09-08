@@ -54,7 +54,19 @@
         "summary": { "type": "string" }
       }
     },
-    "wall_time_s": { "type": "integer", "minimum": 0 }
+    "wall_time_s": { "type": "integer", "minimum": 0 },
+    "net_commit": { "$ref": "#/$defs/sha" },
+    "delivered": { "type": "boolean" },
+    "plan_message": { "type": "string" },
+    "reseeds": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["stack"],
+        "properties": { "stack": { "type": "string" }, "subtask": { "$ref": "#/$defs/subtaskId" } }
+      }
+    }
   },
   "$defs": {
     "sha": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },

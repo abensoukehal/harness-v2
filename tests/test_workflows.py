@@ -31,6 +31,16 @@ class Workflows(unittest.TestCase):
             used = set(re.findall(r"phase\('([^']+)'\)", text)) | set(re.findall(r"\bphase: '([A-Z][^']*)'", text))
             self.assertEqual(used - declared, set(), p.name)
 
+    def test_build_is_mechanical_where_it_matters(self):
+        text = (ROOT / "claude/workflows/harness-build.js").read_text()
+        self.assertLess(text.index("harness/bin/net check"), text.index("harness/bin/${resuming ? 'resume' : 'up'}"))
+        self.assertLess(text.index("harness/bin/net freeze"), text.index("harness/bin/next"))
+        self.assertLess(text.index("harness/bin/report"), text.index("harness/bin/notify ${slug} run_finished"))
+        self.assertIn("--reseed", text)
+        self.assertNotIn("communicate skill", text, "the report is a tool, not an agent")
+        plan = (ROOT / "claude/workflows/harness-plan.js").read_text()
+        self.assertIn("harness/bin/notify ${slug} plan_ready", plan)
+
     def test_pure_orchestration(self):
         for p in SCRIPTS:
             text = p.read_text()

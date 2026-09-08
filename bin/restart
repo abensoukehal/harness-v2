@@ -9,9 +9,16 @@ from harness.env import restart
 
 
 def run(argv):
+    reseed = "--reseed" in argv
+    argv = [a for a in argv if a != "--reseed"]
+    subtask = None
+    if "--subtask" in argv:
+        i = argv.index("--subtask")
+        subtask = argv[i + 1] if i + 1 < len(argv) else None
+        del argv[i:i + 2]
     if len(argv) < 2:
-        raise HarnessError("usage: restart <slug> <stack> [<stack> ...]")
-    restart(find_workspace(), check_slug(argv[0]), argv[1:])
+        raise HarnessError("usage: restart <slug> <stack> [<stack> ...] [--reseed] [--subtask <id>]")
+    restart(find_workspace(), check_slug(argv[0]), argv[1:], reseed=reseed, subtask=subtask)
 
 
 main(run)

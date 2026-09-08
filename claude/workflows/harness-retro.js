@@ -22,8 +22,8 @@ const RETRO = {
 }
 const CHECK = {
   type: 'object',
-  properties: { clean: { type: 'boolean' }, tests_green: { type: 'boolean' }, tag_exists: { type: 'boolean' }, detail: { type: 'string' } },
-  required: ['clean', 'tests_green', 'tag_exists'],
+  properties: { clean: { type: 'boolean' }, tests_green: { type: 'boolean' }, tag_exists: { type: 'boolean' }, report_exists: { type: 'boolean' }, detail: { type: 'string' } },
+  required: ['clean', 'tests_green', 'tag_exists', 'report_exists'],
 }
 
 phase('Retro')
@@ -36,8 +36,8 @@ log(`retro: ${retro.edits.length} files edited, ${retro.dropped.length} friction
 phase('Check')
 const check = await agent(
   `In harness/, change nothing. Run \`npm ci --no-fund --no-audit\` when node_modules is missing, then \`tests/hygiene.sh\` and \`npm test\`: tests_green when both exit 0. ` +
-  `clean = \`git status --porcelain\` prints nothing. tag_exists = \`git tag -l retro/${slug}\` prints the tag. detail = the failing lines, ten at most.`,
+  `clean = \`git status --porcelain\` prints nothing. tag_exists = \`git tag -l retro/${slug}\` prints the tag. report_exists = ${FEATURE}/report.md exists. detail = the failing lines, ten at most.`,
   { label: 'verify', schema: CHECK, effort: 'low' })
-const ok = Boolean(check && check.clean && check.tests_green && (check.tag_exists || retro.unpushed))
+const ok = Boolean(check && check.clean && check.tests_green && check.report_exists && (check.tag_exists || retro.unpushed))
 if (!ok) log(`retro check failed: ${check ? check.detail : 'no result'}`)
 return { status: ok ? 'done' : 'failed', ...retro, check }

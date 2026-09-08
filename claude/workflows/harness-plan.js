@@ -83,5 +83,8 @@ if (!parsed || !parsed.ok) {
   parsed = await parseStep()
   if (!parsed || !parsed.ok) throw new Error(`plan.md still malformed:\n${parsed && parsed.error}`)
 }
+await agent(
+  `${IO}Run:\nharness/bin/state update ${slug} - <<'EOF'\n${JSON.stringify({ plan_message: planning.message })}\nEOF\nharness/bin/notify ${slug} plan_ready\nReturn ok true when both exit 0, else ok false with stderr as error.`,
+  { label: 'notify', schema: RESULT, effort: 'low' })
 log(`plan ready: ${parsed.subtask_count} sub-tasks, ${planning.gap_count} gaps, ${planning.journey_steps} journey steps`)
 return { plan: `${FEATURE}/plan.md`, subtasks: parsed.subtask_count, gaps: planning.gap_count, journey_steps: planning.journey_steps, message: planning.message }

@@ -63,7 +63,7 @@ WEB_DEV = ("python3 -c \"import urllib.request,os; urllib.request.urlopen('http:
            " && echo \"booting with $DB_PASSWORD\" && echo \"ready on ${PORT_WEB}\" && sleep 60")
 
 
-def env_config(web_health='log: "ready on"', web_timeout=15, web_dev=WEB_DEV, api_seed="echo seeded > seed.marker"):
+def env_config(web_health='log: "ready on"', web_timeout=15, web_dev=WEB_DEV, api_seed="echo seeded >> seed.marker"):
     return textwrap.dedent("""
         client: example-env
         stacks:

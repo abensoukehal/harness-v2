@@ -45,8 +45,9 @@ const strings = { type: 'array', items: { type: 'string' } }
 const REVIEW = {
   type: 'object',
   properties: {
-    status: { enum: ['done', 'blocked'] }, commit: { type: 'string' }, lines_added: { type: 'integer' }, justification: { type: 'string' },
+    status: { enum: ['done', 'blocked', 'restart'] }, commit: { type: 'string' }, lines_added: { type: 'integer' }, justification: { type: 'string' },
     last_error: { type: 'string' }, decisions: strings, frictions: strings, report: { type: 'string' },
+    stack: { type: 'string' }, reseed: { type: 'boolean' },
   },
   required: ['status', 'report'],
 }
@@ -59,7 +60,6 @@ const QA = {
   },
   required: ['failures'],
 }
-const REPORT = { type: 'object', properties: { report: { type: 'string' } }, required: ['report'] }
 
 const io = (task, opts = {}) => agent(IO + task, { effort: 'low', schema: OK, ...opts })
 const readState = async (phaseName) => {
@@ -92,6 +92,8 @@ let state = launch.state
 const resuming = state.subtasks.length > 0
 if (resuming) {
   log(`state holds ${state.subtasks.length} sub-tasks: state wins over plan.md`)
+  const net = await io(`Run \`harness/bin/net check ${slug}\`; ok by exit code; output = stdout and stderr.`, { label: 'net check' })
+  if (!net || !net.ok) throw new Error(`refusing to start: ${net && (net.error || net.output)}`)
 } else {
   const subtasks = plan.subtasks.map(({ role, ...rest }) => rest)
   await update({ kind: plan.kind, subtasks, phase: 'safety_net' })
@@ -115,12 +117,25 @@ try {
     if (!net) throw new Error('test-writer returned nothing')
     const vacuous = net.zones.filter((z) => !z.mutation_red).map((z) => z.zone)
     if (vacuous.length) throw new Error(`safety net is vacuous for ${vacuous.join(', ')}: nothing went red under mutation`)
-    await update({ client_test_baseline: net.baseline, phase: 'build' })
-    log(`safety net: ${net.zones.length} zones pinned, baseline recorded`)
+    await update({ client_test_baseline: net.baseline })
+    const frozen = await io(`Run \`harness/bin/net freeze ${slug}\`; ok by exit code; output = stdout and stderr.`, { label: 'net freeze' })
+    if (!frozen || !frozen.ok) throw new Error(`safety net could not be frozen: ${frozen && (frozen.error || frozen.output)}`)
+    await update({ phase: 'build' })
+    log(`safety net: ${net.zones.length} zones pinned, baseline recorded, tests frozen`)
   }
 
   // Build
   phase('Build')
+  // A restart request from a worker or a reviewer (11.1, 19.1): served, respawned, no attempt spent, two per sub-task.
+  const serveRestart = async (id, result, count) => {
+    if (count > MAX_RESTARTS) return { status: 'blocked', reason: 'environment', last_error: clip(`restart of ${result.stack} requested ${count} times`) }
+    const flags = (result.reseed ? ' --reseed' : '') + ` --subtask ${id}`
+    const r = await io(`Run \`harness/bin/restart ${slug} ${result.stack}${flags}\`; ok by exit code; output = the last 20 lines.`, { label: `restart ${result.stack}`, phase: 'Build' })
+    if (!r || !r.ok) return { status: 'blocked', reason: 'environment', last_error: clip(r && (r.error || r.output)) }
+    log(`${id} restarted ${result.stack}${result.reseed ? ' with reseed' : ''}, respawning`)
+    return true
+  }
+
   const runSubtask = async (id) => {
     const started = await update({ subtasks: [{ id, status: 'running' }] }, 'Build')
     const spentBefore = budget.spent()
@@ -135,11 +150,8 @@ try {
         worker = await agent(brief.output, { agentType: 'worker', label: `${id} worker`, phase: 'Build', schema: WORKER, ...model('worker') })
         if (!worker) { outcome = { status: 'blocked', reason: 'worker', last_error: 'worker returned nothing' }; break }
         if (worker.status === 'restart') {
-          restarts += 1
-          if (restarts > MAX_RESTARTS) { outcome = { status: 'blocked', reason: 'environment', last_error: clip(`restart of ${worker.stack} requested ${restarts} times`) }; break }
-          const r = await io(`Run \`harness/bin/restart ${slug} ${worker.stack}\`; ok by exit code; output = the last 20 lines.`, { label: `restart ${worker.stack}`, phase: 'Build' })
-          if (!r || !r.ok) { outcome = { status: 'blocked', reason: 'environment', last_error: clip(r && (r.error || r.output)) }; break }
-          log(`${id} restarted ${worker.stack}, respawning`)
+          const served = await serveRestart(id, worker, ++restarts)
+          if (served !== true) { outcome = served; break }
           continue
         }
         if (worker.status === 'needs') { outcome = { status: 'blocked', reason: 'needs', last_error: clip(worker.report), ask: worker.ask }; break }
@@ -148,6 +160,11 @@ try {
         review = await agent(
           `${brief.output}\n\n# Worker report\n${worker.report}\nFiles touched: ${(worker.files || []).join(', ')}`,
           { agentType: 'reviewer', label: `${id} review`, phase: 'Build', schema: REVIEW, ...model('reviewer') })
+        if (review && review.status === 'restart') {
+          const served = await serveRestart(id, review, ++restarts)
+          if (served !== true) { outcome = served; break }
+          continue
+        }
         if (!review || review.status !== 'done' || !review.commit) {
           outcome = { status: 'blocked', reason: 'review', last_error: clip(review && review.last_error) }
           break
@@ -171,34 +188,16 @@ try {
     log(`${id} ${outcome.status}${outcome.commit ? ' ' + outcome.commit.slice(0, 8) : ''}${outcome.reason ? ' (' + outcome.reason + ')' : ''}`)
   }
 
+  const NEXT = { type: 'object', properties: { ready: strings, skipped: strings, pending: { type: 'integer' }, error: { type: 'string' } }, required: ['ready', 'skipped', 'pending'] }
   while (true) {
-    state = await readState('Build')
-    const map = byId()
-    const pending = state.subtasks.filter((s) => s.status === 'pending')
-    const stuck = state.subtasks.filter((s) => s.status === 'running')
-    if (stuck.length) {
-      await update({ subtasks: stuck.map((s) => ({ id: s.id, status: 'blocked', reason: 'error', last_error: 'left running by a failed round' })) }, 'Build')
-      stuck.forEach((s) => summary.blocked.push(`${s.id}: error`))
-      continue
-    }
-    if (!pending.length) break
-    const dead = (id) => ['blocked', 'skipped'].includes(map[id].status)
-    const toSkip = pending.filter((s) => (s.depends_on || []).some(dead))
-    if (toSkip.length) {
-      await update({ subtasks: toSkip.map((s) => ({ id: s.id, status: 'skipped', reason: `depends on ${s.depends_on.filter(dead).join(', ')}` })) }, 'Build')
-      toSkip.forEach((s) => { summary.skipped.push(s.id); log(`${s.id} skipped: depends on ${s.depends_on.filter(dead).join(', ')}`) })
-      continue
-    }
-    const ready = pending.filter((s) => (s.depends_on || []).every((d) => map[d].status === 'done'))
-    if (!ready.length) throw new Error(`no runnable sub-task among ${pending.map((s) => s.id).join(', ')}`)
-    const batch = []
-    const repos = new Set()
-    for (const s of ready) {
-      const repo = repoOf(s.id)
-      if (!repos.has(repo) && batch.length < MAX_PARALLEL) { repos.add(repo); batch.push(s.id) }
-    }
-    await parallel(batch.map((id) => () => runSubtask(id)))
+    const round = await agent(`${IO}Run \`harness/bin/next ${slug}\` and return its JSON verbatim; on a non-zero exit return ready [], skipped [], pending -1 and stderr as error.`,
+      { label: 'next round', schema: NEXT, effort: 'low', phase: 'Build' })
+    if (!round || round.pending < 0) throw new Error(`build loop stopped: ${round && round.error}`)
+    round.skipped.forEach((id) => { summary.skipped.push(id); log(`${id} skipped: a dependency is blocked or skipped`) })
+    if (!round.ready.length) break
+    await parallel(round.ready.map((id) => () => runSubtask(id)))
   }
+  state = await readState('Build')
 
   // QA
   phase('QA')
@@ -236,10 +235,8 @@ try {
     `git -C ${wt} push origin ${state.branch}` + (cfg.mode === 'direct_merge' ? ` && git -C ${wt} push origin ${state.branch}:${cfg.target_branch}` : ''))
   const delivery = await io(`Run, stopping at the first failure:\n${pushes.join('\n')}\nok when every command exits 0; output = the last 20 lines of output.`, { label: 'push' })
   summary.delivered = Boolean(delivery && delivery.ok)
-  if (!summary.delivered) {
-    await update({ frictions: [`delivery · push refused · ${clip(delivery && delivery.output)}`] })
-    log('push refused: recorded as a friction')
-  }
+  await update({ delivered: summary.delivered, ...(summary.delivered ? {} : { frictions: [`delivery · push refused · ${clip(delivery && delivery.output)}`] }) })
+  if (!summary.delivered) log('push refused: recorded as a friction')
 } finally {
   await io(`Run \`harness/bin/cleanup ${slug}\`.`, { label: 'cleanup', phase: 'Delivery' })
 }
@@ -248,10 +245,7 @@ state = await readState('Delivery')
 const wall = state.subtasks.reduce((n, s) => n + ((s.cost && s.cost.duration_s) || 0), 0)
 await update({ phase: 'finished', wall_time_s: wall })
 const status = !summary.delivered ? 'partial' : (summary.blocked.length || summary.skipped.length || summary.gaps.length) ? 'done with gaps' : 'done'
-const report = await agent(
-  `Load the communicate skill. Feature ${slug}, status "${status}". Read ${FEATURE}/state.json, ${FEATURE}/spec-gaps.md, ${FEATURE}/decisions.md and product/cost-log.md. ` +
-  `Known gaps from QA: ${JSON.stringify(summary.gaps)}. Write the end-of-run report in the exact shape, then append the cost line to product/cost-log.md ` +
-  `(tokens = ${budget.spent()}, wall_time_s = ${wall}, subtasks = ${state.subtasks.length}, blocked = ${summary.blocked.length}). Return the report as "report".`,
-  { label: 'report', schema: REPORT, ...model('io') })
+const report = await io(`Run \`harness/bin/report ${slug}\` and return its full stdout as output; then run \`harness/bin/notify ${slug} run_finished\`. ok when the report exits 0.`, { label: 'report' })
+if (!report || !report.ok) throw new Error(`report failed: ${report && report.error}`)
 log(`${slug}: ${status}`)
-return { status, report: report && report.report, blocked: summary.blocked, skipped: summary.skipped, gaps: summary.gaps, tokens_out: budget.spent() }
+return { status, report: report.output, blocked: summary.blocked, skipped: summary.skipped, gaps: summary.gaps, tokens_out: budget.spent() }
