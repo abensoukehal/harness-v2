@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Refuses every push that is not the feature branch of the worktree it runs in (9.4).
+# Force-pushes and deletions are refused unconditionally. Checkouts outside .worktrees/ are not governed.
+set -uo pipefail
+top=$(git rev-parse --show-toplevel) || exit 1
+case "$top" in
+  */.worktrees/*/*) ;;
+  *) exit 0 ;;
+esac
+rest=${top##*/.worktrees/}
+slug=${rest%%/*}
+ws=${top%/.worktrees/*}
+config="$ws/product/client.config.yaml"
+state="$ws/product/features/$slug/state.json"
+read -r prefix target mode < <(python3 - "$config" <<'PY'
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))["delivery"]
+print(d["branch_prefix"], d["target_branch"], d["mode"])
+PY
+) || { echo "pre-push: cannot read $config" >&2; exit 1; }
+phase=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["phase"])' "$state" 2>/dev/null || echo none)
+allowed="refs/heads/${prefix}${slug}"
+zero=0000000000000000000000000000000000000000
+status=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ -z "${local_ref:-}" ] && continue
+  if [ "$local_sha" = "$zero" ]; then
+    echo "pre-push: refused deleting $remote_ref" >&2; status=1; continue
+  fi
+  if [ "$remote_sha" != "$zero" ] && ! git merge-base --is-ancestor "$remote_sha" "$local_sha" 2>/dev/null; then
+    echo "pre-push: refused force-push to $remote_ref" >&2; status=1; continue
+  fi
+  [ "$remote_ref" = "$allowed" ] && continue
+  if [ "$mode" = direct_merge ] && [ "$remote_ref" = "refs/heads/$target" ] && [ "$phase" = delivery ]; then
+    continue
+  fi
+  echo "pre-push: refused $remote_ref from feature $slug; only $allowed is allowed" >&2; status=1
+done
+exit $status

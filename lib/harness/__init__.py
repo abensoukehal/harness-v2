@@ -27,9 +27,9 @@ def find_workspace(start=None):
     raise HarnessError("not inside a workspace: no product/client.config.yaml above %s" % here)
 
 
-def git(*args, cwd=None):
+def git(*args, cwd=None, env=None):
     try:
-        done = subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+        done = subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as e:
         raise HarnessError("git %s: %s" % (" ".join(args), e.stderr.strip()))
     return done.stdout.strip()

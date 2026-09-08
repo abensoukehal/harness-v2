@@ -1,7 +1,21 @@
 import shutil
 import subprocess
 
-from . import HarnessError, git
+from . import HARNESS_ROOT, HarnessError, git
+
+HOOK = HARNESS_ROOT / "hooks" / "pre-push"
+
+
+def configure_repo(ws, cfg, repo_dir):
+    """Fixed identity, no signing, harness-owned hooks (9.2, 9.4). Repo-level, so every worktree inherits it."""
+    hooks = ws / ".hooks"
+    hooks.mkdir(exist_ok=True)
+    shutil.copy(HOOK, hooks / "pre-push")
+    (hooks / "pre-push").chmod(0o755)
+    author = cfg["delivery"]["commit_author"]
+    for key, value in [("user.name", author["name"]), ("user.email", author["email"]),
+                       ("commit.gpgsign", "false"), ("core.hooksPath", str(hooks))]:
+        git("config", "--local", key, value, cwd=repo_dir)
 
 
 def repos_of(cfg):
@@ -21,6 +35,7 @@ def ensure(ws, cfg, slug, state):
         repo_dir = ws / "repos" / repo
         if not (repo_dir / ".git").exists():
             raise HarnessError("repos/%s is not a git checkout" % repo)
+        configure_repo(ws, cfg, repo_dir)
         rel = ".worktrees/%s/%s" % (slug, repo)
         path = ws / rel
         if str(path.resolve()) not in {str(p) for p in map(lambda x: (ws / x).resolve(), registered(repo_dir))}:
