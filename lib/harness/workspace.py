@@ -3,7 +3,7 @@ import os
 import shutil
 import subprocess
 
-from . import HARNESS_ROOT, HarnessError, check_slug, git
+from . import HARNESS_ROOT, PIN, HarnessError, check_pin, check_slug, git
 
 TEMPLATES = HARNESS_ROOT / "templates"
 LINKED = ["workflows", "agents", "skills"]
@@ -37,6 +37,7 @@ def init(client, root):
     origin = subprocess.run(["git", "remote", "get-url", "origin"], cwd=HARNESS_ROOT, capture_output=True, text=True)
     if origin.returncode == 0:
         git("remote", "set-url", "origin", origin.stdout.strip(), cwd=ws / "harness")
+    (ws / PIN).write_text(git("rev-parse", "HEAD", cwd=ws / "harness") + "\n")
     link(ws)
     return ws
 
@@ -45,6 +46,7 @@ def link(ws):
     source = ws / "harness" / "claude"
     if not source.is_dir():
         raise HarnessError("%s has no harness/claude directory" % ws)
+    check_pin(ws)
     dot = ws / ".claude"
     dot.mkdir(exist_ok=True)
     for name in LINKED:
@@ -54,6 +56,27 @@ def link(ws):
         elif target.exists():
             raise HarnessError("%s is a real directory, not a link" % target)
         target.symlink_to(os.path.join("..", "harness", "claude", name))
+
+
+def pin(ws, commit=None):
+    """Move harness/ to a commit (default: the remote's HEAD) and record it in product/harness.pin."""
+    harness = ws / "harness"
+    if not (harness / ".git").exists():
+        raise HarnessError("%s has no harness checkout" % ws)
+    fetched = subprocess.run(["git", "fetch", "-q", "origin"], cwd=harness, capture_output=True, text=True)
+    if commit is None:
+        if fetched.returncode:
+            raise HarnessError("cannot fetch the harness remote: %s" % fetched.stderr.strip())
+        head = subprocess.run(["git", "rev-parse", "--verify", "--quiet", "origin/HEAD"], cwd=harness, capture_output=True, text=True)
+        if head.returncode:
+            head = subprocess.run(["git", "rev-parse", "--verify", "--quiet", "origin/main"], cwd=harness, capture_output=True, text=True)
+        if head.returncode:
+            raise HarnessError("the harness remote has no HEAD or main to pin to; pass a commit")
+        commit = head.stdout.strip()
+    sha = git("rev-parse", "--verify", commit + "^{commit}", cwd=harness)
+    git("checkout", "-q", "--detach", sha, cwd=harness)
+    (ws / PIN).write_text(sha + "\n")
+    return sha
 
 
 def new(ws, slug):

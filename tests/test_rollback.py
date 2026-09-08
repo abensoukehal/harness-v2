@@ -19,6 +19,8 @@ class Rollback(unittest.TestCase):
         sh("git", "clone", "-q", str(ROOT), str(self.repo), cwd=self.tmp.name)
         sh("git", "config", "user.email", "t@example.com", cwd=self.repo)
         sh("git", "config", "user.name", "t", cwd=self.repo)
+        for tag in sh("git", "tag", "-l", "retro/*", cwd=self.repo).split():
+            sh("git", "tag", "-d", tag, cwd=self.repo)
         for i, word in enumerate(["one", "two", "three"], start=1):
             (self.repo / "STATE.md").write_text(word + "\n")
             env = dict(os.environ, GIT_COMMITTER_DATE="%d-%02d-%02dT00:00:00" % (2000, 1, i),

@@ -11,7 +11,7 @@ from harness.env import close
 def run(argv):
     if len(argv) != 1:
         raise HarnessError("usage: close <slug>")
-    close(find_workspace(), check_slug(argv[0]))
+    close(find_workspace(check=False), check_slug(argv[0]))
 
 
 main(run)

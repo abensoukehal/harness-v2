@@ -11,7 +11,7 @@ from harness.env import down
 def run(argv):
     if len(argv) != 1:
         raise HarnessError("usage: cleanup <slug>")
-    down(find_workspace(), check_slug(argv[0]))
+    down(find_workspace(check=False), check_slug(argv[0]))
 
 
 main(run)

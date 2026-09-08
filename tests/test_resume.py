@@ -1,3 +1,4 @@
+import socket
 import tempfile
 import unittest
 from pathlib import Path
@@ -70,6 +71,20 @@ class Resume(unittest.TestCase):
         self.assertEqual(len(state["frictions"]), 2)
         for line in ["st-02: marked done", "st-04: marked done", "st-03: interrupted", "phase: safety net"]:
             self.assertIn(line, done.stdout)
+
+    def test_port_held_by_a_stranger_is_reallocated(self):
+        state = load_state(self.ws, "hello")
+        state["ports"] = {"api": 50201, "web": 50202, "db": 50203}
+        save_state(self.ws, "hello", state)
+        with socket.socket() as stranger:
+            stranger.bind(("127.0.0.1", 50201))
+            stranger.listen()
+            done = run("resume", "hello", ws=self.ws)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertIn("ports still held for api", done.stdout)
+            ports = load_state(self.ws, "hello")["ports"]
+            self.assertNotEqual(ports["api"], 50201)
+            self.assertTrue(is_held(ports["api"]))
 
     def test_third_interruption_blocks_as_unstable(self):
         state = load_state(self.ws, "hello")

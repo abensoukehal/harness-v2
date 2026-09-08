@@ -74,6 +74,7 @@ class Commit(unittest.TestCase):
             ("Fix " + "ACME" + "-" + "123", "ticket id"),
             ("Finish the hello flow", "feature slug"),
             ("Let the agent add coupons", "forbidden word"),
+            ("Ask Claude to review the coupon form", "forbidden word"),
             ("Add AI summaries", "forbidden word"),
             ("Update state.json", "internal file"),
             ("Add coupons on " + "-".join(["2024", "05", "01"]), "date"),
