@@ -248,7 +248,7 @@ Work:
 
 Exit: the client baseline is recorded, the full safety net passes on the base branch, and every zone survived its mutation check.
 
-**The net is frozen after this phase.** No worker, reviewer or QA agent may edit a file under `product/tests/`. A test that looks wrong during build is a BLOCKED sub-task with `reason: oracle`, never an edit. This is what makes the net mean anything; without it the loop reaches green by moving the target.
+**The net is frozen after this phase.** Freezing is a commit, not an instruction: `bin/net freeze` commits `product/tests/` in the product repo and records the sha as `net_commit` in state. `bin/net check` runs at every relaunch and refuses when the tree differs, or when sub-tasks exist with no freeze behind them. `/harness-build` refuses to start on that check. No worker, reviewer or QA agent may edit a file under `product/tests/`. A test that looks wrong during build is a BLOCKED sub-task with `reason: oracle`, never an edit. This is what makes the net mean anything; without it the loop reaches green by moving the target.
 
 ### Phase 4: Implementation loop
 
@@ -425,6 +425,8 @@ Rules:
 - **Exit criteria live here in full, not as a reference to `plan.md`.** Section 4.1 forbids re-parsing the plan mid-run, so a resumed run that only held a pointer would have nothing to verify against.
 - **No timestamps anywhere.** Durations only (`duration_s`, `wall_time_s`). A date in machine state fails the hygiene check for a reason that has nothing to do with the run.
 - **Two counters, not one.** `attempts` counts criterion failures and caps at 3 (section 5.4). `interruptions` counts crashes on the same sub-task and caps at 3 independently (section 8.3). A run that died twice has spent no attempts.
+- **A sub-task still marked running when the loop comes back around is blocked with `reason: error`**, so the run continues past it rather than waiting on a worker that is not coming back. It is `resume` that repairs it: back to pending, one interruption counted, no attempt spent. Blocking it in the loop keeps the day going; counting it as a failed attempt would spend the sub-task's budget on a crash it did not cause.
+- `delivered` records whether the feature reached the client branch. The report's partial status reads it.
 
 ### 8.1 Starting a feature
 
@@ -827,6 +829,7 @@ These worked. They move to v2 as written, minus the history around them.
 - **The ask format.** Lettered options, one line each, the recommendation marked, everything technical below a `Detail:` line, plain words above it, and always state what is still running. This already matches section 13; v1 got the format right and the trigger wrong.
 - **A report is never a question.** A progress report ends with what happened. The run continues by default.
 - **Parking beats halting.** One blocked subtask parks; every other runnable subtask keeps going. Matches the failure policy in section 5.
+- **An answered ask reopens what it parked.** Parking without a way back is just a slower halt: the sub-task stops, its dependents are skipped, and the work leaves the run permanently. `bin/answer <slug> <st-id> <letter>` writes the choice into state, sets the parked sub-task to pending, and resets the sub-tasks skipped on its account. The next `/harness-build` picks them up with the answer in the briefing. Ali answers from the report, after the run, which is the whole point of not waiting for him during it.
 - **Frozen oracle.** The implementer may not edit the tests written before it. A test that looks wrong is a stop, never an edit. This is what makes the regression net in phase 3 mean anything.
 - **Cite the ground.** Every recorded decision names where it came from: the spec, the design, an existing pattern in the client code, or the agent's own judgement with a stated reason. Judgement is allowed; presenting judgement as spec is not.
 - **Two reduction-pass rules with real evidence behind them:** delete a superseded path in the same subtask rather than leaving it additively, and grep the module's existing helpers before writing a new one. v1 recorded the same index-resolution helper written three times in one module across three reopened loops.
