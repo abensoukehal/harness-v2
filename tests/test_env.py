@@ -72,8 +72,9 @@ class Up(unittest.TestCase):
         done = run("up", "hello", ws=ws)
         self.assertEqual(done.returncode, 0, done.stderr)
         state = load_state(ws, "hello")
-        self.assertEqual(set(state["ports"]), {"api", "web"})
+        self.assertEqual(set(state["ports"]), {"api", "web", "db"})
         self.assertEqual(set(state["worktrees"]), {"svc", "web"})
+        self.assertTrue(is_held(state["ports"]["db"]), "db (repo-less stack) listens")
         for name in ["api", "web"]:
             self.assertTrue((ws / ".run/hello" / (name + ".pid")).exists())
             self.assertIn("%s: port %d healthy" % (name, state["ports"][name]), done.stdout)

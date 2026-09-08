@@ -7,7 +7,7 @@ description: The retrospective as a checklist, from frictions to a pushed and ta
 
 Engine edits go under `harness/`. Product writes: `retro.md` and `conventions.md` only.
 
-1. Read `state.json`: frictions, blocked items, attempts, budget overrun, accepted gaps, reactions from Ali.
+1. Read `state.json`: frictions, blocked items, attempts and interruptions, cost per sub-task, budget overrun, accepted gaps, reactions from Ali.
 2. Compare this run's totals with the median of the previous three runs in this workspace's `cost-log.md`: tokens, wall time, blocked count, attempts per sub-task. Fewer than three runs: one line saying there is no baseline. Any total more than 50% worse with no matching growth in feature size: write it at the top of `retro.md` as a suspected regression, name the harness commits between `harness_commit` and HEAD, add an entry to `OPEN_QUESTIONS.md`. Decide nothing about the cause.
 3. `git -C harness pull`. Read `git log <harness_commit>..HEAD` with diffs.
 4. Drop every friction a commit in that range already addresses.

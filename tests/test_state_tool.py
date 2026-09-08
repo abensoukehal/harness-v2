@@ -30,14 +30,16 @@ class StateTool(unittest.TestCase):
         got = json.loads(run("state", "get", "hello", ws=self.ws).stdout)
         self.assertEqual((got["kind"], got["phase"], got["subtasks"]), ("service", "ingestion", []))
 
-        done = self.update({"phase": "build", "subtasks": [{"id": "st-01", "stack": "backend", "status": "pending", "attempts": 0}], "decisions": ["st-01 · a · spec"]})
+        base = {"id": "st-01", "stack": "backend", "status": "pending", "attempts": 0, "interruptions": 0,
+                "worktree": ".worktrees/hello/backend", "exit_criteria": [{"kind": "lint"}]}
+        done = self.update({"phase": "build", "subtasks": [base], "decisions": ["st-01 · a · spec"]})
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("now", json.loads(done.stdout))
         done = self.update({"subtasks": [{"id": "st-01", "status": "running"}], "decisions": ["st-01 · b · design"], "frictions": ["f"]})
         self.assertEqual(done.returncode, 0, done.stderr)
         state = load_state(self.ws, "hello")
         self.assertEqual(state["phase"], "build")
-        self.assertEqual(state["subtasks"], [{"id": "st-01", "stack": "backend", "status": "running", "attempts": 0}])
+        self.assertEqual(state["subtasks"], [dict(base, status="running")])
         self.assertEqual(state["decisions"], ["st-01 · a · spec", "st-01 · b · design"])
         self.assertEqual(state["frictions"], ["f"])
 
@@ -51,11 +53,11 @@ class StateTool(unittest.TestCase):
 
     def test_since_becomes_duration(self):
         run("state", "init", "hello", "service", ws=self.ws)
-        self.update({"subtasks": [{"id": "st-01", "stack": "backend", "status": "pending", "attempts": 0}]})
-        now = json.loads(run("state", "get", "hello", ws=self.ws).stdout)
-        done = self.update({"subtasks": [{"id": "st-01", "status": "done", "attempts": 1, "commit": "a" * 40, "tokens_in": 0, "tokens_out": 5,
-                                          "lines_added": 1, "_since": 1}]})
+        self.update({"subtasks": [{"id": "st-01", "stack": "backend", "status": "pending", "attempts": 0, "interruptions": 0,
+                                   "worktree": ".worktrees/hello/backend", "exit_criteria": [{"kind": "lint"}]}]})
+        done = self.update({"subtasks": [{"id": "st-01", "status": "done", "attempts": 1, "commit": "a" * 40,
+                                          "cost": {"tokens_in": 0, "tokens_out": 5, "lines_added": 1, "duration_s": 0}, "_since": 1}]})
         self.assertEqual(done.returncode, 0, done.stderr)
         st = load_state(self.ws, "hello")["subtasks"][0]
         self.assertNotIn("_since", st)
-        self.assertGreater(st["duration_s"], 1000)
+        self.assertGreater(st["cost"]["duration_s"], 1000)

@@ -19,7 +19,7 @@ def configure_repo(ws, cfg, repo_dir):
 
 
 def repos_of(cfg):
-    return sorted({s["repo"] for s in cfg["stacks"].values()})
+    return sorted({s["repo"] for s in cfg["stacks"].values() if s["repo"] is not None})
 
 
 def registered(repo_dir):

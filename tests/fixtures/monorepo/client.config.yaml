@@ -16,6 +16,7 @@ stacks:
     health:
       http: http://localhost:${PORT_WEB}/
       expect_status: 200
+    health_timeout_s: 120
   api:
     repo: mono
     path: repos/mono/services/api
@@ -28,10 +29,19 @@ stacks:
     env_file: api.env
     dev_url: http://localhost:${PORT_API}
     logs: logs/api.log
+    depends_on: [db]
     health:
       log: "Application startup complete"
     health_timeout_s: 90
     seed: python -m app.seed
+  db:
+    repo: null
+    path: null
+    commands:
+      dev: docker compose up -d postgres
+    health:
+      tcp: ${PORT_DB}
+    health_timeout_s: 60
 
 delivery:
   base_branch: main

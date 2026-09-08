@@ -12,7 +12,7 @@ const cli = fileURLToPath(new URL("../bin/validate", import.meta.url));
 const fixtures = ["two-stack/client.config.yaml", "monorepo/client.config.yaml", "two-stack/state.json", "monorepo/state.json"];
 
 test("fixtures are valid", () => {
-  for (const f of fixtures) assert.deepEqual(validateFile(fixture(f)), { ok: true, errors: [] }, f);
+  for (const f of fixtures) assert.deepEqual(validateFile(fixture(f)), { ok: true, pass: "cross-field", errors: [] }, f);
 });
 
 function rejects(schema, file, cases) {
@@ -36,6 +36,11 @@ rejects("config", "two-stack/client.config.yaml", [
   ["stack name unusable as PORT_ var", (c) => (c.stacks["Front-End"] = c.stacks.frontend), /^\/stacks\/Front-End$/],
   ["stack without repo", (c) => delete c.stacks.frontend.repo, /^\/stacks\/frontend\/repo$/],
   ["stack without health", (c) => delete c.stacks.frontend.health, /^\/stacks\/frontend\/health$/],
+  ["stack without health_timeout_s", (c) => delete c.stacks.backend.health_timeout_s, /^\/stacks\/backend\/health_timeout_s$/],
+  ["repo null with a path", (c) => (c.stacks.frontend.repo = null), /^\/stacks\/frontend\/path$/],
+  ["path null with a repo", (c) => (c.stacks.frontend.path = null), /^\/stacks\/frontend\/path$/],
+  ["health tcp next to log", (c) => (c.stacks.db.health = { tcp: "${PORT_DB}", log: "x" }), /^\/stacks\/db\/health$/],
+  ["depends_on an undeclared stack", (c) => (c.stacks.backend.depends_on = ["cache"]), /^\/stacks\/backend\/depends_on\/0$/],
   ["path outside its repo", (c) => (c.stacks.frontend.path = "repos/other"), /^\/stacks\/frontend\/path$/],
   ["path not under repos/", (c) => (c.stacks.frontend.path = "frontend"), /^\/stacks\/frontend\/path$/],
   ["commands without dev", (c) => delete c.stacks.backend.commands.dev, /^\/stacks\/backend\/commands\/dev$/],
@@ -82,9 +87,18 @@ rejects("state", "two-stack/state.json", [
   ["worktree for another feature", (s) => (s.worktrees.frontend = ".worktrees/other/frontend"), /^\/worktrees\/frontend$/],
   ["status unknown", (s) => (s.subtasks[0].status = "finished"), /^\/subtasks\/0\/status$/],
   ["done without commit", (s) => delete s.subtasks[0].commit, /^\/subtasks\/0\/commit$/],
-  ["done without tokens_in", (s) => delete s.subtasks[0].tokens_in, /^\/subtasks\/0\/tokens_in$/],
-  ["done without lines_added", (s) => delete s.subtasks[0].lines_added, /^\/subtasks\/0\/lines_added$/],
-  ["negative duration", (s) => (s.subtasks[0].duration_s = -1), /^\/subtasks\/0\/duration_s$/],
+  ["done without cost", (s) => delete s.subtasks[0].cost, /^\/subtasks\/0\/cost$/],
+  ["cost without lines_added", (s) => delete s.subtasks[0].cost.lines_added, /^\/subtasks\/0\/cost\/lines_added$/],
+  ["negative duration", (s) => (s.subtasks[0].cost.duration_s = -1), /^\/subtasks\/0\/cost\/duration_s$/],
+  ["cost flattened onto the sub-task", (s) => (s.subtasks[0].tokens_in = 1), /^\/subtasks\/0\/tokens_in$/],
+  ["missing interruptions", (s) => delete s.subtasks[0].interruptions, /^\/subtasks\/0\/interruptions$/],
+  ["interruptions 4", (s) => (s.subtasks[1].interruptions = 4), /^\/subtasks\/1\/interruptions$/],
+  ["missing worktree", (s) => delete s.subtasks[0].worktree, /^\/subtasks\/0\/worktree$/],
+  ["worktree of another feature", (s) => (s.subtasks[0].worktree = ".worktrees/other/backend"), /^\/subtasks\/0\/worktree$/],
+  ["criteria as a pointer to plan.md", (s) => (s.subtasks[2].exit_criteria = "plan.md#st-03"), /^\/subtasks\/2\/exit_criteria$/],
+  ["criterion item as a pointer", (s) => (s.subtasks[2].exit_criteria = [{ ref: "plan.md#st-03" }]), /^\/subtasks\/2\/exit_criteria\/0\/kind$/],
+  ["no criteria at all", (s) => (s.subtasks[2].exit_criteria = []), /^\/subtasks\/2\/exit_criteria$/],
+  ["baseline under the old key", (s) => { s.baseline = s.client_test_baseline; delete s.client_test_baseline; }, /^\/baseline$/],
   ["blocked without reason", (s) => delete s.subtasks[1].reason, /^\/subtasks\/1\/reason$/],
   ["attempts 4", (s) => (s.subtasks[1].attempts = 4), /^\/subtasks\/1\/attempts$/],
   ["last_error too long", (s) => (s.subtasks[1].last_error = "x".repeat(2001)), /^\/subtasks\/1\/last_error$/],
@@ -113,6 +127,21 @@ function run(...args) {
   }
 }
 
+test("state schema names no timestamp field", () => {
+  const schema = JSON.parse(readFileSync(new URL("../schemas/state.schema.json", import.meta.url), "utf8"));
+  const names = [];
+  const walk = (node) => {
+    if (!node || typeof node !== "object") return;
+    for (const [k, v] of Object.entries(node)) {
+      if (k === "properties") names.push(...Object.keys(v));
+      walk(v);
+    }
+  };
+  walk(schema);
+  const suspects = names.filter((n) => /(_at$|^created|^updated|time$|timestamp|date)/i.test(n));
+  assert.deepEqual(suspects, []);
+});
+
 test("cli: valid file exits 0 silently", () => {
   assert.deepEqual(run(fixture("monorepo/state.json")), { status: 0, stderr: "" });
 });
@@ -124,6 +153,7 @@ test("cli: invalid file exits 1 and names the offending path", () => {
   const { status, stderr } = run(file);
   assert.equal(status, 1);
   assert.match(stderr, /client\.config\.yaml:\/stacks\/frontend\/repo: missing required key "repo"/);
+  assert.match(stderr, /schema error\(s\); cross-field checks run once the schema pass is clean/);
 });
 
 test("cli: unknown file name without --schema exits 2", () => {

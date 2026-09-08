@@ -20,6 +20,9 @@ try {
 }
 if (!result.ok) {
   for (const e of result.errors) console.error(`${file}:${e.path}: ${e.message}`);
+  console.error(result.pass === "schema"
+    ? `${result.errors.length} schema error(s); cross-field checks run once the schema pass is clean`
+    : `${result.errors.length} cross-field error(s); the schema pass is clean`);
   process.exit(1);
 }
 

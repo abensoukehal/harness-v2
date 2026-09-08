@@ -21,7 +21,7 @@ def reconcile(ws, cfg, slug, state):
     """Apply reality to state. Returns the corrections made, one line each."""
     notes = []
     for st in state["subtasks"]:
-        wt = ws / ".worktrees" / slug / cfg["stacks"][st["stack"]]["repo"]
+        wt = ws / st["worktree"]
         if st["status"] == "done" and not on_branch(wt, st.get("commit")):
             notes.append("%s: marked done but commit %s is not on %s; reset to pending" % (st["id"], st.get("commit"), state["branch"]))
             state["frictions"].append("%s · state said done but the commit was not on the branch · resume" % st["id"])

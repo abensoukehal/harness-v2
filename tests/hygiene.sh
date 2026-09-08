@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Mechanical hygiene check (14.4, 20.1, 14.2). Every hit fails. No judgement anywhere in here.
+# Mechanical hygiene check over prose (14.4, 20.1, 14.2). Every hit fails. No judgement anywhere in here.
+# Prose: CLAUDE.md, claude/agents, claude/skills, STATE.md, OPEN_QUESTIONS.md, templates/**/*.md,
+# and in a workspace product/conventions.md and product/code-map/. This script is the one exempt file.
 # usage: hygiene.sh [--harness DIR] [--workspace DIR]
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -26,7 +28,7 @@ fail=0
 scan() {  # scan <rule> <regex> <grep flags> <files...>
   local rule=$1 rx=$2 flags=$3 hits
   shift 3
-  [ $# -eq 0 ] && return 0
+  [ $# -eq 0 ] || [ -z "${1:-}" ] && return 0
   hits=$(grep -nHIE $flags -e "$rx" -- "$@" 2>/dev/null)
   if [ "$rule" = ticket ] && [ -n "$hits" ]; then
     hits=$(printf '%s\n' "$hits" | grep -vE "$ticket_ok")
@@ -37,30 +39,36 @@ scan() {  # scan <rule> <regex> <grep flags> <files...>
   fi
   return 0
 }
+collect() {  # collect <paths...>: prints existing files, NUL-separated; markdown under directories
+  local p
+  for p in "$@"; do
+    if [ -f "$p" ]; then printf '%s\0' "$p"
+    elif [ -d "$p" ]; then find "$p" -type f -name '*.md' -print0
+    fi
+  done
+}
 
-harness_files=()
-while IFS= read -r -d '' f; do harness_files+=("$f"); done < <(
-  find "$harness" -type f ! -path '*/.git/*' ! -path '*/node_modules/*' ! -name package-lock.json \
-       ! -name SPEC.md ! -name hygiene.sh ! -name .DS_Store -print0)
-scan date   "$date_rx"   "" "${harness_files[@]}"
-scan ticket "$ticket_rx" "" "${harness_files[@]}"
-scan words  "$words_rx"  -i "${harness_files[@]}"
+prose=()
+while IFS= read -r -d '' f; do prose+=("$f"); done < <(
+  collect "$harness/CLAUDE.md" "$harness/STATE.md" "$harness/OPEN_QUESTIONS.md" "$harness/claude/agents" "$harness/claude/skills" "$harness/templates")
+scan date   "$date_rx"   "" "${prose[@]:-}"
+scan ticket "$ticket_rx" "" "${prose[@]:-}"
+scan words  "$words_rx"  -i "${prose[@]:-}"
 
 if [ -n "$workspace" ]; then
   names=$(python3 - "$workspace/product/client.config.yaml" <<'PY'
 import re, sys, yaml
 c = yaml.safe_load(open(sys.argv[1]))
 generic = {"frontend", "backend", "mobile", "ai", "web", "api", "app", "db"}
-names = {c["client"]} | set(c["stacks"]) | {s["repo"] for s in c["stacks"].values()}
+names = {c["client"]} | set(c["stacks"]) | {s["repo"] for s in c["stacks"].values() if s.get("repo")}
 print("|".join(re.escape(n) for n in sorted(names) if n not in generic))
 PY
   ) || { echo "cannot read $workspace/product/client.config.yaml" >&2; exit 2; }
-  [ -n "$names" ] && scan client "\b($names)\b" -i "${harness_files[@]}"
-  product_files=()
-  while IFS= read -r -d '' f; do product_files+=("$f"); done < <(
-    find "$workspace/product/conventions.md" "$workspace/product/code-map" -type f ! -name .gitkeep -print0 2>/dev/null)
-  scan date   "$date_rx"   "" "${product_files[@]}"
-  scan ticket "$ticket_rx" "" "${product_files[@]}"
-  scan words  "$words_rx"  -i "${product_files[@]}"
+  [ -n "$names" ] && scan client "\b($names)\b" -i "${prose[@]:-}"
+  product=()
+  while IFS= read -r -d '' f; do product+=("$f"); done < <(collect "$workspace/product/conventions.md" "$workspace/product/code-map")
+  scan date   "$date_rx"   "" "${product[@]:-}"
+  scan ticket "$ticket_rx" "" "${product[@]:-}"
+  scan words  "$words_rx"  -i "${product[@]:-}"
 fi
 exit $fail

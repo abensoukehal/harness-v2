@@ -60,7 +60,9 @@ class Plan(unittest.TestCase):
         first = out["subtasks"][0]
         self.assertEqual(first["files"], ["repos/svc/export.py", "repos/svc/routes.py"])
         self.assertEqual(first["depends_on"], [])
-        self.assertEqual((first["status"], first["attempts"], first["line_budget"], first["role"]), ("pending", 0, 80, "backend"))
+        self.assertEqual((first["status"], first["attempts"], first["interruptions"], first["line_budget"], first["role"]), ("pending", 0, 0, 80, "backend"))
+        self.assertEqual(first["worktree"], ".worktrees/hello/svc")
+        self.assertEqual(out["subtasks"][1]["worktree"], ".worktrees/hello/web")
         self.assertEqual(first["exit_criteria"][1], {"kind": "http", "method": "GET", "url": "http://127.0.0.1:${PORT_API}/export.csv",
                                                      "expect_status": 200, "json_path": "rows", "value": "3"})
         second = out["subtasks"][1]
@@ -68,7 +70,8 @@ class Plan(unittest.TestCase):
         self.assertEqual(second["depends_on"], ["st-01"])
         self.assertEqual(second["exit_criteria"][2], {"kind": "log", "stack": "api", "present": True, "pattern": "export requested"})
         self.assertEqual(out["subtasks"][2]["exit_criteria"], [{"kind": "examples", "set": "api/summaries.json", "floor": 0.9}])
-        self.assertEqual(out["config"]["stacks"], {"api": {"repo": "svc", "role": "backend"}, "web": {"repo": "web", "role": "frontend"}})
+        self.assertEqual(out["config"]["stacks"], {"api": {"repo": "svc", "role": "backend"}, "web": {"repo": "web", "role": "frontend"},
+                                                   "db": {"repo": None, "role": "backend"}})
         self.assertEqual((out["config"]["max_fixes"], out["config"]["mode"], out["config"]["branch_prefix"]), (3, "pr", "feature/"))
 
     def test_malformed_plans_quote_the_line(self):
@@ -76,6 +79,7 @@ class Plan(unittest.TestCase):
             (PLAN.replace("kind: service\n", ""), "missing 'kind"),
             (PLAN.replace("kind: service", "kind: fullstack"), "line 2: kind must be one of"),
             (PLAN.replace("stack: web", "stack: mobile"), "line 15: unknown stack 'mobile'"),
+            (PLAN.replace("stack: web", "stack: db"), "line 15: stack 'db' has no repo"),
             (PLAN.replace("line_budget: 40\n", ""), "line 14: missing field 'line_budget'"),
             (PLAN.replace("- lint", "- manual looks correct"), "line 12: not a criterion"),
             (PLAN.replace("0.9", "1"), "line 31: examples floor must be"),
@@ -85,7 +89,7 @@ class Plan(unittest.TestCase):
             (PLAN.replace("- http GET", "- http FETCH"), "line 11: http method must be"),
             (PLAN.replace("## st-02 · The", "## st-02 - The"), "line 14: sub-task heading must read"),
             (PLAN.replace("files: repos/web/orders.js", "owner: web"), "line 16: unknown field 'owner'"),
-            (PLAN.replace("- log api present", "- log db present"), "line 22: log criterion names unknown stack 'db'"),
+            (PLAN.replace("- log api present", "- log cache present"), "line 22: log criterion names unknown stack 'cache'"),
         ]
         for text, expected in cases:
             done = plan(self.ws, text)

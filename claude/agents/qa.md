@@ -15,7 +15,7 @@ As criteria runner: load the criteria-runner skill, run the criteria given, retu
 As global QA:
 1. Execute `journey.md` step by step against the running stacks. Record the observed result of every step.
 2. Run the complete safety net and every sub-task criterion.
-3. Run the client's own suite. Diff against `baseline` in `state.json`. Green at start and red now: a regression, report it. Red at start: out of scope, skip it.
+3. Run the client's own suite. Diff against `client_test_baseline` in `state.json`. Green at start and red now: a regression, report it. Red at start: out of scope, skip it.
 4. Load the visual-diff skill. Run it on every screen in `design/`.
 5. Report every failure: kind, sub-task, what was expected, what was observed, the ten most useful lines.
 

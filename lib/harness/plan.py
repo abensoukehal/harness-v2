@@ -27,7 +27,7 @@ def role_of(name, stack):
     return "backend"
 
 
-def parse(text, cfg):
+def parse(text, cfg, slug=None):
     lines = text.splitlines()
     stacks = cfg["stacks"]
 
@@ -94,6 +94,8 @@ def parse(text, cfg):
         i, stack = st["stack"]
         if stack not in stacks:
             fail(i, "unknown stack %r; config has %s" % (stack, ", ".join(sorted(stacks))))
+        if stacks[stack]["repo"] is None:
+            fail(i, "stack %r has no repo: the run starts it but never edits it" % stack)
         i, files = st["files"]
         files = [f.strip() for f in files.split(",") if f.strip()]
         if not files:
@@ -113,6 +115,7 @@ def parse(text, cfg):
         criteria = [criterion(i, text, stacks, fail) for i, text in st["_criteria"]]
         out.append({"id": st["id"], "stack": stack, "goal": st["goal"], "files": files, "depends_on": deps,
                     "line_budget": int(budget), "exit_criteria": criteria, "status": "pending", "attempts": 0,
+                    "interruptions": 0, "worktree": ".worktrees/%s/%s" % (slug, stacks[stack]["repo"]),
                     "role": role_of(stack, stacks[stack])})
         seen.append(st["id"])
     return {"kind": kind, "subtasks": out}

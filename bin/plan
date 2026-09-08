@@ -19,7 +19,7 @@ def run(argv):
     if not path.exists():
         raise HarnessError("no plan.md for %s: run /harness-plan %s first" % (slug, slug))
     cfg = load_config(ws)
-    plan = parse(path.read_text(), cfg)
+    plan = parse(path.read_text(), cfg, slug)
     plan["config"] = config_block(cfg)
     print(json.dumps(plan, indent=2))
 

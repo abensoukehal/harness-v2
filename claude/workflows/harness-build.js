@@ -123,7 +123,7 @@ try {
     if (!net) throw new Error('test-writer returned nothing')
     const vacuous = net.zones.filter((z) => !z.mutation_red).map((z) => z.zone)
     if (vacuous.length) throw new Error(`safety net is vacuous for ${vacuous.join(', ')}: nothing went red under mutation`)
-    await update({ baseline: net.baseline, phase: 'build' })
+    await update({ client_test_baseline: net.baseline, phase: 'build' })
     log(`safety net: ${net.zones.length} zones pinned, baseline recorded`)
   }
 
@@ -166,8 +166,9 @@ try {
       outcome = { status: 'blocked', reason: 'error', last_error: clip(String(e && e.message)) }
     }
     const tag = (lines) => (lines || []).map((l) => (l.startsWith(id) ? l : `${id} · ${l}`))
-    const item = { id, ...outcome, attempts: Math.max(1, Math.min(3, (worker && worker.attempts) || 1)) }
-    if (outcome.status === 'done') Object.assign(item, { tokens_in: 0, tokens_out: budget.spent() - spentBefore, _since: started })
+    const { lines_added, ...rest } = outcome
+    const item = { id, ...rest, attempts: Math.max(1, Math.min(3, (worker && worker.attempts) || 1)) }
+    if (outcome.status === 'done') Object.assign(item, { cost: { tokens_in: 0, tokens_out: budget.spent() - spentBefore, duration_s: 0, lines_added: outcome.lines_added }, _since: started })
     await update({
       subtasks: [item],
       decisions: [...tag(worker && worker.decisions), ...tag(review && review.decisions)],
@@ -210,7 +211,7 @@ try {
   phase('QA')
   await update({ phase: 'qa' })
   const runQA = () => agent(
-    `Feature ${slug}. Global QA per your Method: ${FEATURE}/journey.md, the safety net, every criterion in ${FEATURE}/state.json, the client suite against baseline, visual diff on design/. Return the failures.`,
+    `Feature ${slug}. Global QA per your Method: ${FEATURE}/journey.md, the safety net, every criterion in ${FEATURE}/state.json, the client suite against client_test_baseline, visual diff on design/. Return the failures.`,
     { agentType: 'qa', label: 'global qa', schema: QA, ...model('qa') })
   let qa = (await runQA()) || { failures: [] }
   let fixes = 0
@@ -251,7 +252,7 @@ try {
 }
 
 state = await readState('Delivery')
-const wall = state.subtasks.reduce((n, s) => n + (s.duration_s || 0), 0)
+const wall = state.subtasks.reduce((n, s) => n + ((s.cost && s.cost.duration_s) || 0), 0)
 await update({ phase: 'finished', wall_time_s: wall })
 const status = !summary.delivered ? 'partial' : (summary.blocked.length || summary.skipped.length || summary.gaps.length) ? 'done with gaps' : 'done'
 const report = await agent(

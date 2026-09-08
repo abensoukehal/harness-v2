@@ -100,10 +100,10 @@
     "stack": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["repo", "path", "commands", "health"],
+      "required": ["repo", "path", "commands", "health", "health_timeout_s"],
       "properties": {
-        "repo": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
-        "path": { "type": "string", "pattern": "^repos/" },
+        "repo": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9._-]+$" },
+        "path": { "type": ["string", "null"], "pattern": "^repos/" },
         "role": { "enum": ["backend", "frontend", "mobile", "ai"] },
         "framework": { "type": "string" },
         "package_manager": { "type": "string" },
@@ -141,10 +141,16 @@
                 "http": { "type": "string", "minLength": 1 },
                 "expect_status": { "type": "integer", "minimum": 100, "maximum": 599 }
               }
+            },
+            {
+              "title": "tcp check",
+              "additionalProperties": false,
+              "required": ["tcp"],
+              "properties": { "tcp": { "type": ["string", "integer"], "minLength": 1 } }
             }
           ]
         },
-        "health_timeout_s": { "type": "integer", "minimum": 1, "default": 120 },
+        "health_timeout_s": { "type": "integer", "minimum": 1 },
         "seed": { "$ref": "#/$defs/command" }
       }
     }

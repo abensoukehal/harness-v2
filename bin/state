@@ -25,7 +25,7 @@ def merge(state, patch):
                 since = item.pop("_since", None)
                 target.update(item)
                 if since is not None:
-                    target["duration_s"] = max(0, int(time.time()) - int(since))
+                    target.setdefault("cost", {})["duration_s"] = max(0, int(time.time()) - int(since))
         elif key in ("decisions", "frictions"):
             state[key].extend(value)
         else:

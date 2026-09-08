@@ -73,6 +73,7 @@ def env_config(web_health='log: "ready on"', web_timeout=15, web_dev=WEB_DEV, ap
             commands:
               dev: python3 -m http.server ${PORT_API} --bind 127.0.0.1
             env_file: api.env
+            depends_on: [db]
             health:
               http: http://127.0.0.1:${PORT_API}/
               expect_status: 200
@@ -88,6 +89,14 @@ def env_config(web_health='log: "ready on"', web_timeout=15, web_dev=WEB_DEV, ap
             health:
               %s
             health_timeout_s: %d
+          db:
+            repo: null
+            path: null
+            commands:
+              dev: python3 -m http.server ${PORT_DB} --bind 127.0.0.1
+            health:
+              tcp: ${PORT_DB}
+            health_timeout_s: 15
     """ % (api_seed, web_dev, web_health, web_timeout)) + TAIL % "{api: pytest, web: playwright}"
 
 
@@ -99,11 +108,13 @@ MONO_CONFIG = textwrap.dedent("""
         path: repos/mono/apps/a
         commands: {dev: sleep 60}
         health: {log: never}
+        health_timeout_s: 5
       b:
         repo: mono
         path: repos/mono/apps/b
         commands: {dev: sleep 60}
         health: {log: never}
+        health_timeout_s: 5
 """) + TAIL % "{a: pytest, b: pytest}"
 
 

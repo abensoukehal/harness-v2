@@ -79,5 +79,7 @@ def create_state(ws, slug, kind):
 def stack_dir(ws, cfg, slug, name):
     """Where a stack lives inside the feature's worktree (11.2): repos/<repo>/x maps to .worktrees/<slug>/<repo>/x."""
     stack = cfg["stacks"][name]
+    if stack["repo"] is None:
+        return ws
     inside = stack["path"][len("repos/" + stack["repo"]):].lstrip("/")
     return ws / ".worktrees" / slug / stack["repo"] / inside

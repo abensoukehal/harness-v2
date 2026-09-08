@@ -26,11 +26,13 @@ class Briefing(unittest.TestCase):
             state = load_state(ws, "hello")
             state["ports"] = {"api": 50100, "web": 50101}
             state["subtasks"] = [
-                {"id": "st-01", "stack": "api", "status": "pending", "attempts": 0, "goal": "Orders export as CSV",
-                 "files": ["repos/svc/export.py"], "line_budget": 60,
+                {"id": "st-01", "stack": "api", "status": "pending", "attempts": 0, "interruptions": 0, "worktree": ".worktrees/hello/svc",
+                 "goal": "Orders export as CSV", "files": ["repos/svc/export.py"], "line_budget": 60,
                  "exit_criteria": [{"kind": "http", "method": "GET", "url": "http://127.0.0.1:${PORT_API}/export", "expect_status": 200}]},
-                {"id": "st-02", "stack": "web", "status": "pending", "attempts": 0, "depends_on": ["st-01"]},
-                {"id": "st-03", "stack": "api", "status": "pending", "attempts": 0, "depends_on": ["st-01"], "token_budget": 777},
+                {"id": "st-02", "stack": "web", "status": "pending", "attempts": 0, "interruptions": 0, "worktree": ".worktrees/hello/web",
+                 "depends_on": ["st-01"], "exit_criteria": [{"kind": "lint"}]},
+                {"id": "st-03", "stack": "api", "status": "pending", "attempts": 0, "interruptions": 0, "worktree": ".worktrees/hello/svc",
+                 "depends_on": ["st-01"], "token_budget": 777, "exit_criteria": [{"kind": "lint"}]},
             ]
             save_state(ws, "hello", state)
             done = run("briefing", "hello", "st-01", ws=ws)

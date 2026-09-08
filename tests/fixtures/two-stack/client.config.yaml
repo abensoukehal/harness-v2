@@ -30,11 +30,20 @@ stacks:
     env_file: .env
     dev_url: http://localhost:${PORT_BACKEND}
     logs: stdout
+    depends_on: [db]
     health:
       http: http://localhost:${PORT_BACKEND}/healthz
       expect_status: 200
     health_timeout_s: 180
     seed: python manage.py loaddata fixtures/seed.json
+  db:
+    repo: null
+    path: null
+    commands:
+      dev: docker compose up -d postgres
+    health:
+      tcp: ${PORT_DB}
+    health_timeout_s: 60
 
 delivery:
   base_branch: develop

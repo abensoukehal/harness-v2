@@ -5,6 +5,7 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["feature", "kind", "harness_commit", "branch", "phase", "ports", "worktrees", "subtasks", "decisions", "frictions", "accepted_gaps"],
+  "description": "Durations only. No timestamp, date or created/updated field ever lands here.",
   "properties": {
     "feature": { "type": "string", "pattern": "^[a-z0-9-]+$" },
     "kind": { "enum": ["ui", "service", "mixed"] },
@@ -38,7 +39,7 @@
         }
       }
     },
-    "baseline": {
+    "client_test_baseline": {
       "type": "object",
       "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
       "additionalProperties": { "type": "array", "items": { "type": "string" } }
@@ -62,31 +63,39 @@
     "subtask": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "stack", "status", "attempts"],
+      "required": ["id", "stack", "status", "attempts", "interruptions", "worktree", "exit_criteria"],
       "properties": {
         "id": { "$ref": "#/$defs/subtaskId" },
         "stack": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
         "status": { "enum": ["pending", "running", "done", "blocked", "skipped"] },
         "attempts": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "interruptions": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "worktree": { "type": "string", "pattern": "^\\.worktrees/" },
         "goal": { "type": "string" },
         "files": { "type": "array", "items": { "type": "string" } },
         "depends_on": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/subtaskId" } },
         "line_budget": { "type": "integer", "minimum": 0 },
         "token_budget": { "type": "integer", "minimum": 1 },
-        "exit_criteria": { "type": "array", "items": { "$ref": "#/$defs/criterion" } },
-        "tokens_in": { "$ref": "#/$defs/count" },
-        "tokens_out": { "$ref": "#/$defs/count" },
-        "duration_s": { "$ref": "#/$defs/count" },
-        "lines_added": { "$ref": "#/$defs/count" },
+        "exit_criteria": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/criterion" } },
+        "cost": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokens_in", "tokens_out", "duration_s", "lines_added"],
+          "properties": {
+            "tokens_in": { "$ref": "#/$defs/count" },
+            "tokens_out": { "$ref": "#/$defs/count" },
+            "duration_s": { "$ref": "#/$defs/count" },
+            "lines_added": { "$ref": "#/$defs/count" }
+          }
+        },
         "commit": { "$ref": "#/$defs/sha" },
         "reason": { "type": "string", "minLength": 1 },
-        "last_error": { "type": "string", "maxLength": 2000 },
-        "interruptions": { "$ref": "#/$defs/count" }
+        "last_error": { "type": "string", "maxLength": 2000 }
       },
       "allOf": [
         {
           "if": { "properties": { "status": { "const": "done" } } },
-          "then": { "required": ["commit", "tokens_in", "tokens_out", "duration_s", "lines_added"] }
+          "then": { "required": ["commit", "cost"] }
         },
         {
           "if": { "properties": { "status": { "enum": ["blocked", "skipped"] } } },

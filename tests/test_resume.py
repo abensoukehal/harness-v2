@@ -9,7 +9,10 @@ from harness.env import stop_all
 from harness.ports import is_held
 
 FAKE_SHA = "0123456789abcdef" * 2 + "01234567"
-COST = {"tokens_in": 10, "tokens_out": 5, "duration_s": 3, "lines_added": 2, "attempts": 1}
+COST = {"cost": {"tokens_in": 10, "tokens_out": 5, "duration_s": 3, "lines_added": 2}, "attempts": 1, "interruptions": 0}
+CRIT = [{"kind": "lint"}]
+API = dict(worktree=".worktrees/hello/svc", exit_criteria=CRIT)
+WEB = dict(worktree=".worktrees/hello/web", exit_criteria=CRIT)
 
 
 class Resume(unittest.TestCase):
@@ -34,10 +37,10 @@ class Resume(unittest.TestCase):
         sh("git", "checkout", "-q", "main", cwd=repo)
         state["phase"] = "build"
         state["subtasks"] = [
-            dict(id="st-01", stack="api", status="done", commit=self.real, **COST),
-            dict(id="st-02", stack="api", status="done", commit=FAKE_SHA, **COST),
-            dict(id="st-03", stack="web", status="running", attempts=2, interruptions=0),
-            dict(id="st-04", stack="api", status="done", commit=self.other, **COST),
+            dict(id="st-01", stack="api", status="done", commit=self.real, **COST, **API),
+            dict(id="st-02", stack="api", status="done", commit=FAKE_SHA, **COST, **API),
+            dict(id="st-03", stack="web", status="running", attempts=2, interruptions=0, **WEB),
+            dict(id="st-04", stack="api", status="done", commit=self.other, **COST, **API),
         ]
         save_state(self.ws, "hello", state)
         self.web = self.ws / ".worktrees/hello/web"

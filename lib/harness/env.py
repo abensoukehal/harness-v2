@@ -4,6 +4,7 @@ import re
 import shlex
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -83,6 +84,13 @@ def tail(path, scrubber, n=10):
 def healthy(health, source, env):
     if "log" in health:
         return source.exists() and re.search(health["log"], source.read_text(errors="replace")) is not None
+    if "tcp" in health:
+        port = expand(str(health["tcp"]), env)
+        if not port.isdigit():
+            return False
+        with socket.socket() as s:
+            s.settimeout(1)
+            return s.connect_ex(("127.0.0.1", int(port))) == 0
     try:
         with urllib.request.urlopen(expand(health["http"], env), timeout=2) as r:
             return r.status == health["expect_status"]
@@ -93,7 +101,7 @@ def healthy(health, source, env):
 
 
 def wait_healthy(name, stack, proc, logfile, cwd, env, scrubber):
-    timeout = stack.get("health_timeout_s", 120)
+    timeout = stack["health_timeout_s"]
     logs = stack.get("logs", "stdout")
     source = logfile if logs == "stdout" else cwd / logs
     deadline = time.monotonic() + timeout
@@ -109,7 +117,7 @@ def wait_healthy(name, stack, proc, logfile, cwd, env, scrubber):
 
 
 def seed(name, stack, cwd, env, logfile, keys, scrubber):
-    timeout = stack.get("health_timeout_s", 120)
+    timeout = stack["health_timeout_s"]
     proc = spawn(stack["seed"], cwd, env, logfile, keys)
     try:
         code = proc.wait(timeout=timeout)
