@@ -5,9 +5,9 @@ description: The one way to commit in a client worktree, and what it refuses.
 
 # Commit hygiene
 
-One command commits, run from the workspace root:
+One command commits, from any directory:
 ```
-harness/bin/commit <slug> <repo> "<subject>" [--body "<text>"]
+$HARNESS_WORKSPACE/harness/bin/commit <slug> <repo> "<subject>" [--body "<text>"]
 ```
 It stages every change in `.worktrees/<slug>/<repo>` and refuses the whole commit when any path or the message breaks a rule. Nothing is dropped silently. Fix the cause, rerun.
 

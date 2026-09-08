@@ -16,18 +16,14 @@ class HarnessError(Exception):
 PIN = "product/harness.pin"
 
 
-def find_workspace(start=None, check=True):
-    """The workspace holding cwd (or HARNESS_WORKSPACE). With check, refuse a harness/ that drifted from the pin."""
+def find_workspace(check=True):
+    """The workspace root, from HARNESS_WORKSPACE only. Never the working directory (2.2). bin scripts also take --workspace DIR."""
     override = os.environ.get("HARNESS_WORKSPACE")
-    if override:
-        ws = Path(override).resolve()
-        if not (ws / "product" / "client.config.yaml").exists():
-            raise HarnessError("HARNESS_WORKSPACE=%s has no product/client.config.yaml" % ws)
-    else:
-        here = Path(start or os.getcwd()).resolve()
-        ws = next((d for d in [here, *here.parents] if (d / "product" / "client.config.yaml").exists()), None)
-        if ws is None:
-            raise HarnessError("not inside a workspace: no product/client.config.yaml above %s" % here)
+    if not override:
+        raise HarnessError("no workspace: pass --workspace DIR or set HARNESS_WORKSPACE; harness/bin/link writes it into .claude/settings.json")
+    ws = Path(override).resolve()
+    if not (ws / "product" / "client.config.yaml").exists():
+        raise HarnessError("workspace %s has no product/client.config.yaml" % ws)
     if check:
         check_pin(ws)
     return ws
@@ -62,9 +58,16 @@ def check_slug(value, what="slug"):
 
 
 def main(fn):
-    """Entry point for bin scripts: run fn(argv), print HarnessError to stderr, exit 1."""
+    """Entry point for bin scripts: --workspace DIR sets HARNESS_WORKSPACE, then fn(argv); a HarnessError goes to stderr, exit 1."""
+    argv = sys.argv[1:]
     try:
-        fn(sys.argv[1:])
+        if "--workspace" in argv:
+            i = argv.index("--workspace")
+            if i + 1 >= len(argv):
+                raise HarnessError("--workspace needs a directory")
+            os.environ["HARNESS_WORKSPACE"] = argv[i + 1]
+            del argv[i:i + 2]
+        fn(argv)
     except HarnessError as e:
         print(str(e), file=sys.stderr)
         sys.exit(1)

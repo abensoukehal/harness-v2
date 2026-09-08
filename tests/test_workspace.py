@@ -1,5 +1,7 @@
+import json
 import os
 import stat
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -106,3 +108,53 @@ class New(unittest.TestCase):
             self.assertEqual(again.returncode, 1)
             self.assertIn("already exists", again.stderr)
             self.assertEqual(run("new", "Bad Slug", ws=ws).returncode, 1)
+
+
+class Root(unittest.TestCase):
+    """Nothing resolves a path from the working directory (2.2)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.ws = make_workspace(Path(self.tmp.name), "example-r")
+        self.assertEqual(run("new", "hello", ws=self.ws).returncode, 0)
+        from harness.config import create_state
+        create_state(self.ws, "hello", "service")
+        self.elsewhere = Path(self.tmp.name) / "elsewhere"
+        self.elsewhere.mkdir()
+
+    def state_get(self, cwd, env_ws=None, flag=False):
+        env = {k: v for k, v in os.environ.items() if k != "HARNESS_WORKSPACE"}
+        if env_ws:
+            env["HARNESS_WORKSPACE"] = str(env_ws)
+        args = [str(ROOT / "bin" / "state"), "get", "hello"] + (["--workspace", str(self.ws)] if flag else [])
+        return subprocess.run(args, cwd=str(cwd), env=env, capture_output=True, text=True)
+
+    def test_a_tool_run_from_elsewhere_still_works_on_the_right_workspace(self):
+        for cwd in [self.elsewhere, ROOT, Path("/")]:
+            done = self.state_get(cwd, flag=True)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertEqual(json.loads(done.stdout)["feature"], "hello")
+            done = self.state_get(cwd, env_ws=self.ws)
+            self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_the_working_directory_is_never_the_workspace(self):
+        done = self.state_get(self.ws)
+        self.assertEqual(done.returncode, 1, "a tool inside the workspace with neither argument nor variable must refuse")
+        self.assertIn("no workspace", done.stderr)
+        self.assertIn("--workspace", done.stderr)
+        wrong = self.state_get(self.ws, env_ws=self.elsewhere)
+        self.assertEqual(wrong.returncode, 1)
+        self.assertIn("has no product/client.config.yaml", wrong.stderr)
+
+    def test_link_writes_the_root_where_every_agent_reads_it(self):
+        settings = self.ws / ".claude" / "settings.json"
+        self.assertEqual(json.loads(settings.read_text())["env"]["HARNESS_WORKSPACE"], str(self.ws))
+        settings.write_text(json.dumps({"permissions": {"allow": ["Bash(npm test)"]}, "env": {"OTHER": "1"}}))
+        done = subprocess.run([str(ROOT / "bin" / "link"), "--workspace", str(self.ws)], cwd=str(self.elsewhere),
+                              env={k: v for k, v in os.environ.items() if k != "HARNESS_WORKSPACE"}, capture_output=True, text=True)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        merged = json.loads(settings.read_text())
+        self.assertEqual(merged["env"], {"OTHER": "1", "HARNESS_WORKSPACE": str(self.ws)})
+        self.assertEqual(merged["permissions"], {"allow": ["Bash(npm test)"]})
+        self.assertIn(str(self.ws), (self.ws / "CLAUDE.md").read_text())

@@ -4,14 +4,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
-from harness import HarnessError, main
+from harness import HarnessError, find_workspace, main
 from harness.workspace import link
 
 
 def run(argv):
     if len(argv) > 1:
-        raise HarnessError("usage: link [workspace]")
-    link(Path(argv[0] if argv else ".").resolve())
+        raise HarnessError("usage: link [workspace | --workspace DIR]")
+    ws = Path(argv[0]).resolve() if argv else find_workspace(check=False)
+    link(ws)
+    print("%s linked; HARNESS_WORKSPACE written to .claude/settings.json" % ws)
 
 
 main(run)

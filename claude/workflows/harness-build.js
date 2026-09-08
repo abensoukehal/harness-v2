@@ -11,12 +11,19 @@ export const meta = {
   ],
 }
 
-const slug = typeof args === 'string' ? args : args && args.slug
+const slug = typeof args === 'string' ? args.trim().split(/\s+/)[0] : args && args.slug
 if (!slug) throw new Error('usage: /harness-build <slug>')
-const FEATURE = `product/features/${slug}`
+// The workspace root is passed, never resolved from a working directory (2.2): args.workspace, else HARNESS_WORKSPACE, which
+// harness/bin/link writes into .claude/settings.json so every agent inherits it.
+const ROOT = { type: 'object', properties: { workspace: { type: 'string' } }, required: ['workspace'] }
+const WS = (args && args.workspace) || ((await agent('Run `printf %s "$HARNESS_WORKSPACE"` and return its stdout, exactly, as workspace.', { label: 'workspace root', schema: ROOT, effort: 'low' })) || {}).workspace
+if (!WS || !WS.startsWith('/')) throw new Error('workspace root unknown: HARNESS_WORKSPACE is not set; run harness/bin/link in the workspace and start the session there')
+const BIN = `${WS}/harness/bin`
+const T = (name) => `${BIN}/${name} --workspace ${WS}`
+const FEATURE = `${WS}/product/features/${slug}`
 const MAX_RESTARTS = 2
 const MAX_PARALLEL = 4
-const IO = 'Run shell commands in the workspace root. Write nothing except what the task says. '
+const IO = `Workspace root: ${WS}. Run the commands exactly as written; they are absolute. Write nothing except what the task says. `
 
 const OK = {
   type: 'object',
@@ -63,12 +70,12 @@ const QA = {
 
 const io = (task, opts = {}) => agent(IO + task, { effort: 'low', schema: OK, ...opts })
 const readState = async (phaseName) => {
-  const r = await agent(`${IO}Run \`harness/bin/state get ${slug}\` and return its JSON verbatim as state.`, { label: 'read state', schema: STATE, effort: 'low', phase: phaseName })
+  const r = await agent(`${IO}Run \`${T('state')} get ${slug}\` and return its JSON verbatim as state.`, { label: 'read state', schema: STATE, effort: 'low', phase: phaseName })
   if (!r) throw new Error('state could not be read')
   return r.state
 }
 const update = async (patch, phaseName) => {
-  const r = await io(`Run:\nharness/bin/state update ${slug} - <<'EOF'\n${JSON.stringify(patch)}\nEOF\nExit 0: ok true, now = the "now" value it prints. Otherwise ok false, error = stderr verbatim.`, { label: 'update state', phase: phaseName })
+  const r = await io(`Run:\n${T('state')} update ${slug} - <<'EOF'\n${JSON.stringify(patch)}\nEOF\nExit 0: ok true, now = the "now" value it prints. Otherwise ok false, error = stderr verbatim.`, { label: 'update state', phase: phaseName })
   if (!r || !r.ok) throw new Error(`state update refused: ${r && r.error}`)
   return r.now
 }
@@ -77,8 +84,8 @@ const clip = (text) => (text || '').split('\n').slice(-10).join('\n').slice(0, 2
 // Launch
 phase('Launch')
 const launch = await agent(
-  `${IO}Run \`harness/bin/plan ${slug}\`. Non-zero exit: plan_ok false, plan_error = its stderr verbatim. Exit 0: plan_ok true, plan = its stdout parsed as JSON, verbatim. ` +
-  `Then run \`harness/bin/state get ${slug}\`: non-zero exit gives state_exists false; otherwise state_exists true and state = its JSON verbatim. ` +
+  `${IO}Run \`${T('plan')} ${slug}\`. Non-zero exit: plan_ok false, plan_error = its stderr verbatim. Exit 0: plan_ok true, plan = its stdout parsed as JSON, verbatim. ` +
+  `Then run \`${T('state')} get ${slug}\`: non-zero exit gives state_exists false; otherwise state_exists true and state = its JSON verbatim. ` +
   'Then result_schema = the JSON in harness/schemas/worker.result.schema.json, verbatim.',
   { label: 'launch', schema: LAUNCH, effort: 'low' })
 if (!launch) throw new Error('launch agent returned nothing')
@@ -92,13 +99,13 @@ let state = launch.state
 const resuming = state.subtasks.length > 0
 if (resuming) {
   log(`state holds ${state.subtasks.length} sub-tasks: state wins over plan.md`)
-  const net = await io(`Run \`harness/bin/net check ${slug}\`; ok by exit code; output = stdout and stderr.`, { label: 'net check' })
+  const net = await io(`Run \`${T('net')} check ${slug}\`; ok by exit code; output = stdout and stderr.`, { label: 'net check' })
   if (!net || !net.ok) throw new Error(`refusing to start: ${net && (net.error || net.output)}`)
 } else {
   const subtasks = plan.subtasks.map(({ role, ...rest }) => rest)
   await update({ kind: plan.kind, subtasks, phase: 'safety_net' })
 }
-const env = await io(`Run \`harness/bin/${resuming ? 'resume' : 'up'} ${slug}\`. ok by exit code; output = the last 20 lines of stdout and stderr.`, { label: resuming ? 'resume' : 'environment up' })
+const env = await io(`Run \`${T(resuming ? 'resume' : 'up')} ${slug}\`. ok by exit code; output = the last 20 lines of stdout and stderr.`, { label: resuming ? 'resume' : 'environment up' })
 if (!env || !env.ok) throw new Error(`environment failed at the environment step:\n${env && env.output}`)
 state = await readState('Launch')
 const byId = () => Object.fromEntries(state.subtasks.map((s) => [s.id, s]))
@@ -112,13 +119,13 @@ try {
     log('every sub-task is done: safety net skipped')
   } else {
     const net = await agent(
-      `Feature ${slug}. Follow your Method on ${FEATURE}. Zones come from product/code-map/. Return baseline per stack, every zone with mutation_red, and a report under ten lines.`,
+      `Workspace root: ${WS}. Feature ${slug}. Follow your Method on ${FEATURE}. Zones come from ${WS}/product/code-map/. Return baseline per stack, every zone with mutation_red, and a report under ten lines.`,
       { agentType: 'test-writer', label: 'safety net', schema: NET, ...model('worker') })
     if (!net) throw new Error('test-writer returned nothing')
     const vacuous = net.zones.filter((z) => !z.mutation_red).map((z) => z.zone)
     if (vacuous.length) throw new Error(`safety net is vacuous for ${vacuous.join(', ')}: nothing went red under mutation`)
     await update({ client_test_baseline: net.baseline })
-    const frozen = await io(`Run \`harness/bin/net freeze ${slug}\`; ok by exit code; output = stdout and stderr.`, { label: 'net freeze' })
+    const frozen = await io(`Run \`${T('net')} freeze ${slug}\`; ok by exit code; output = stdout and stderr.`, { label: 'net freeze' })
     if (!frozen || !frozen.ok) throw new Error(`safety net could not be frozen: ${frozen && (frozen.error || frozen.output)}`)
     await update({ phase: 'build' })
     log(`safety net: ${net.zones.length} zones pinned, baseline recorded, tests frozen`)
@@ -130,7 +137,7 @@ try {
   const serveRestart = async (id, result, count) => {
     if (count > MAX_RESTARTS) return { status: 'blocked', reason: 'environment', last_error: clip(`restart of ${result.stack} requested ${count} times`) }
     const flags = (result.reseed ? ' --reseed' : '') + ` --subtask ${id}`
-    const r = await io(`Run \`harness/bin/restart ${slug} ${result.stack}${flags}\`; ok by exit code; output = the last 20 lines.`, { label: `restart ${result.stack}`, phase: 'Build' })
+    const r = await io(`Run \`${T('restart')} ${slug} ${result.stack}${flags}\`; ok by exit code; output = the last 20 lines.`, { label: `restart ${result.stack}`, phase: 'Build' })
     if (!r || !r.ok) return { status: 'blocked', reason: 'environment', last_error: clip(r && (r.error || r.output)) }
     log(`${id} restarted ${result.stack}${result.reseed ? ' with reseed' : ''}, respawning`)
     return true
@@ -145,7 +152,7 @@ try {
     let outcome = { status: 'blocked', reason: 'worker', last_error: '' }
     try {
       while (true) {
-        const brief = await io(`Run \`harness/bin/briefing ${slug} ${id}\`; output = its stdout verbatim.`, { label: `${id} briefing`, phase: 'Build' })
+        const brief = await io(`Run \`${T('briefing')} ${slug} ${id}\`; output = its stdout verbatim.`, { label: `${id} briefing`, phase: 'Build' })
         if (!brief || !brief.ok) { outcome = { status: 'blocked', reason: 'briefing', last_error: clip(brief && brief.error) }; break }
         worker = await agent(brief.output, { agentType: 'worker', label: `${id} worker`, phase: 'Build', schema: WORKER, ...model('worker') })
         if (!worker) { outcome = { status: 'blocked', reason: 'worker', last_error: 'worker returned nothing' }; break }
@@ -190,7 +197,7 @@ try {
 
   const NEXT = { type: 'object', properties: { ready: strings, skipped: strings, pending: { type: 'integer' }, error: { type: 'string' } }, required: ['ready', 'skipped', 'pending'] }
   while (true) {
-    const round = await agent(`${IO}Run \`harness/bin/next ${slug}\` and return its JSON verbatim; on a non-zero exit return ready [], skipped [], pending -1 and stderr as error.`,
+    const round = await agent(`${IO}Run \`${T('next')} ${slug}\` and return its JSON verbatim; on a non-zero exit return ready [], skipped [], pending -1 and stderr as error.`,
       { label: 'next round', schema: NEXT, effort: 'low', phase: 'Build' })
     if (!round || round.pending < 0) throw new Error(`build loop stopped: ${round && round.error}`)
     round.skipped.forEach((id) => { summary.skipped.push(id); log(`${id} skipped: a dependency is blocked or skipped`) })
@@ -203,7 +210,7 @@ try {
   phase('QA')
   await update({ phase: 'qa' })
   const runQA = () => agent(
-    `Feature ${slug}. Global QA per your Method: ${FEATURE}/journey.md, the safety net, every criterion in ${FEATURE}/state.json, the client suite against client_test_baseline, visual diff on design/. Return the failures.`,
+    `Workspace root: ${WS}. Feature ${slug}. Global QA per your Method: ${FEATURE}/journey.md, the safety net, every criterion in ${FEATURE}/state.json, the client suite against client_test_baseline, visual diff on design/. Return the failures.`,
     { agentType: 'qa', label: 'global qa', schema: QA, ...model('qa') })
   let qa = (await runQA()) || { failures: [] }
   let fixes = 0
@@ -213,7 +220,7 @@ try {
       fixes += 1
       const st = byId()[f.subtask]
       if (!st) { log(`fix ${fixes}/${cfg.max_fixes}: ${f.subtask} is not a sub-task, left as a gap`); continue }
-      const brief = await io(`Run \`harness/bin/briefing ${slug} ${f.subtask}\`; output = its stdout verbatim.`, { label: `${f.subtask} briefing` })
+      const brief = await io(`Run \`${T('briefing')} ${slug} ${f.subtask}\`; output = its stdout verbatim.`, { label: `${f.subtask} briefing` })
       const mission = `${brief && brief.output}\n\n# QA failure to fix\nkind: ${f.kind}\nexpected: ${f.expected || ''}\nobserved: ${f.observed || ''}\n${f.detail}\nFix this failure only.`
       const w = await agent(mission, { agentType: 'worker', label: `fix ${f.subtask}`, schema: WORKER, ...model('worker') })
       let r = null
@@ -232,20 +239,20 @@ try {
   state = await readState('Delivery')
   await update({ phase: 'delivery' })
   const pushes = Object.values(state.worktrees).map((wt) =>
-    `git -C ${wt} push origin ${state.branch}` + (cfg.mode === 'direct_merge' ? ` && git -C ${wt} push origin ${state.branch}:${cfg.target_branch}` : ''))
+    `git -C ${WS}/${wt} push origin ${state.branch}` + (cfg.mode === 'direct_merge' ? ` && git -C ${WS}/${wt} push origin ${state.branch}:${cfg.target_branch}` : ''))
   const delivery = await io(`Run, stopping at the first failure:\n${pushes.join('\n')}\nok when every command exits 0; output = the last 20 lines of output.`, { label: 'push' })
   summary.delivered = Boolean(delivery && delivery.ok)
   await update({ delivered: summary.delivered, ...(summary.delivered ? {} : { frictions: [`delivery · push refused · ${clip(delivery && delivery.output)}`] }) })
   if (!summary.delivered) log('push refused: recorded as a friction')
 } finally {
-  await io(`Run \`harness/bin/cleanup ${slug}\`.`, { label: 'cleanup', phase: 'Delivery' })
+  await io(`Run \`${T('cleanup')} ${slug}\`.`, { label: 'cleanup', phase: 'Delivery' })
 }
 
 state = await readState('Delivery')
 const wall = state.subtasks.reduce((n, s) => n + ((s.cost && s.cost.duration_s) || 0), 0)
 await update({ phase: 'finished', wall_time_s: wall })
 const status = !summary.delivered ? 'partial' : (summary.blocked.length || summary.skipped.length || summary.gaps.length) ? 'done with gaps' : 'done'
-const report = await io(`Run \`harness/bin/report ${slug}\` and return its full stdout as output; then run \`harness/bin/notify ${slug} run_finished\`. ok when the report exits 0.`, { label: 'report' })
+const report = await io(`Run \`${T('report')} ${slug}\` and return its full stdout as output; then run \`${T('notify')} ${slug} run_finished\`. ok when the report exits 0.`, { label: 'report' })
 if (!report || !report.ok) throw new Error(`report failed: ${report && report.error}`)
 log(`${slug}: ${status}`)
 return { status, report: report.output, blocked: summary.blocked, skipped: summary.skipped, gaps: summary.gaps, tokens_out: budget.spent() }

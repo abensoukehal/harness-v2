@@ -49,11 +49,11 @@ class Briefing(unittest.TestCase):
     def test_one_subtask_and_nothing_more(self):
         text = assemble(self.ws, "hello", "st-01")
         for line in ["# Mission st-01 · Orders export as CSV", "feature: hello   branch: feature/hello", "stack: api (backend)",
-                     "work in: .worktrees/hello/svc", "  .worktrees/hello/svc/export.py", "  .worktrees/hello/svc/lib/csv.py",
+                     "work in: %s" % (self.ws / ".worktrees/hello/svc"), "  %s" % (self.ws / ".worktrees/hello/svc/export.py"), "  %s" % (self.ws / ".worktrees/hello/svc/lib/csv.py"),
                      "depends on this: st-02, st-03", "line budget: 60      token budget: 33333",
                      "## Exit criteria", "- http GET http://127.0.0.1:50100/export 200, rows = 3", '- log api present "export requested"', "- lint",
                      "## Stack", "test runner: pytest", "ports: PORT_API=50100 PORT_DB=50102 PORT_WEB=50101",
-                     "log: .run/hello/api.log", "## Conventions", "### all", "Errors bubble up", "### api", "Handlers return plain dicts",
+                     "log: %s" % (self.ws / ".run/hello/api.log"), "## Conventions", "### all", "Errors bubble up", "### api", "Handlers return plain dicts",
                      "## Rules", "Never start or stop a stack: return restart instead."]:
             self.assertIn(line, text, line)
         for absent in ["ONLY-IN-ST02", "browser", "examples", "## Behaviour contract", "Components live next to", "install:", "dev:", "abcd1234", "hunter2", "repos/svc/export.py"]:

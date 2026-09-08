@@ -33,13 +33,23 @@ class Workflows(unittest.TestCase):
 
     def test_build_is_mechanical_where_it_matters(self):
         text = (ROOT / "claude/workflows/harness-build.js").read_text()
-        self.assertLess(text.index("harness/bin/net check"), text.index("harness/bin/${resuming ? 'resume' : 'up'}"))
-        self.assertLess(text.index("harness/bin/net freeze"), text.index("harness/bin/next"))
-        self.assertLess(text.index("harness/bin/report"), text.index("harness/bin/notify ${slug} run_finished"))
+        self.assertLess(text.index("${T('net')} check"), text.index("${T(resuming ? 'resume' : 'up')}"))
+        self.assertLess(text.index("${T('net')} freeze"), text.index("${T('next')}"))
+        self.assertLess(text.index("${T('report')}"), text.index("${T('notify')} ${slug} run_finished"))
         self.assertIn("--reseed", text)
         self.assertNotIn("communicate skill", text, "the report is a tool, not an agent")
         plan = (ROOT / "claude/workflows/harness-plan.js").read_text()
-        self.assertIn("harness/bin/notify ${slug} plan_ready", plan)
+        self.assertIn("${T('notify')} ${slug} plan_ready", plan)
+
+    def test_workspace_root_is_passed_never_resolved(self):
+        for p in SCRIPTS:
+            text = p.read_text()
+            self.assertIn('"$HARNESS_WORKSPACE"', text, p.name)
+            self.assertIn("args.workspace", text, p.name)
+            code = "\n".join(l for l in text.splitlines() if not l.strip().startswith("//") and "workspace root unknown" not in l)
+            self.assertEqual(code.count("harness/bin"), 1, "%s: every tool call goes through the absolute BIN" % p.name)
+            self.assertNotIn("`product/", code, p.name)
+            self.assertNotIn("workspace root. ", code, p.name)
 
     def test_pure_orchestration(self):
         for p in SCRIPTS:

@@ -1,4 +1,5 @@
 """bin/init, bin/link, bin/new."""
+import json
 import os
 import shutil
 import subprocess
@@ -25,7 +26,7 @@ def init(client, root):
     for d in ["secrets", "repos", ".worktrees", "product/code-map", "product/tests", "product/features"]:
         (ws / d).mkdir(parents=True)
     os.chmod(ws / "secrets", 0o700)
-    (ws / "CLAUDE.md").write_text(render("workspace/CLAUDE.md", client=client))
+    (ws / "CLAUDE.md").write_text(render("workspace/CLAUDE.md", client=client, root=str(ws)))
     product = ws / "product"
     (product / "client.config.yaml").write_text(render("workspace/client.config.yaml", client=client))
     (product / "conventions.md").write_text("")
@@ -43,12 +44,17 @@ def init(client, root):
 
 
 def link(ws):
+    """Link .claude/ to the harness and write the workspace root into .claude/settings.json, the one place every agent reads it from (2.2)."""
     source = ws / "harness" / "claude"
     if not source.is_dir():
         raise HarnessError("%s has no harness/claude directory" % ws)
     check_pin(ws)
     dot = ws / ".claude"
     dot.mkdir(exist_ok=True)
+    settings_path = dot / "settings.json"
+    settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
+    settings.setdefault("env", {})["HARNESS_WORKSPACE"] = str(ws)
+    settings_path.write_text(json.dumps(settings, indent=2) + "\n")
     for name in LINKED:
         target = dot / name
         if target.is_symlink():

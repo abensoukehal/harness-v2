@@ -69,10 +69,11 @@ def assemble(ws, slug, subtask_id):
 
     out = ["# Mission %s · %s" % (st["id"], st.get("goal", "")),
            "feature: %s   branch: %s" % (slug, state["branch"]),
+           "workspace: %s" % ws,
            "stack: %s (%s)" % (name, role_of(name, stack)),
-           "work in: " + str(stack_dir(ws, cfg, slug, name).relative_to(ws)),
+           "work in: " + str(stack_dir(ws, cfg, slug, name)),
            "files, open only these:"]
-    out += ["  " + worktree_path(f, slug, cfg) for f in st.get("files", [])]
+    out += ["  " + str(ws / worktree_path(f, slug, cfg)) for f in st.get("files", [])]
     if st.get("answer"):
         out.append("answer from Ali to your question: %s. %s" % (st["answer"]["letter"], st["answer"]["text"]))
     out += ["depends on this: " + (", ".join(dependents) or "none"),
@@ -94,7 +95,7 @@ def assemble(ws, slug, subtask_id):
     if "dev_url" in stack:
         out.append("dev url: " + expand(stack["dev_url"]))
     out.append("ports: " + " ".join("PORT_%s=%d" % (n.upper(), p) for n, p in sorted(ports.items())))
-    out.append("log: .run/%s/%s.log" % (slug, name))
+    out.append("log: %s" % (ws / ".run" / slug / (name + ".log")))
 
     out += ["", "## Conventions"]
     path = ws / "product" / "conventions.md"
