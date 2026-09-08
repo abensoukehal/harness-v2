@@ -3,6 +3,7 @@ import statistics
 
 from .ask import render
 from .config import feature_dir, load_config, load_state
+from .cost import k, summary
 from .gaps import parse_gaps
 
 REASONS = {
@@ -69,12 +70,18 @@ def build_report(ws, slug):
     if state["kind"] != "service" and cfg.get("design", {}).get("comparable", True) is False:
         assumptions.append("- The design cannot be compared pixel for pixel, as the config declares, so no visual check ran.")
     lines += assumptions or ["None recorded."]
-    tokens = sum(s.get("cost", {}).get("tokens_in", 0) + s.get("cost", {}).get("tokens_out", 0) for s in state["subtasks"])
+    agents = state.get("cost_by_agent", {})
+    if agents:
+        tokens = sum(a["tokens_in"] + a["tokens_out"] for a in agents.values())
+    else:
+        tokens = sum(s.get("cost", {}).get("tokens_in", 0) + s.get("cost", {}).get("tokens_out", 0) for s in state["subtasks"])
     attempts = sum(s["attempts"] for s in state["subtasks"])
     wall = state.get("wall_time_s", 0)
     blocked = sum(1 for s in state["subtasks"] if s["status"] == "blocked")
     lines += ["", "What it cost.",
-              "%d tokens, %d s wall time, %d sub-tasks, %d attempts, %d blocked." % (tokens, wall, len(state["subtasks"]), attempts, blocked)]
+              "%s tokens, %d s wall time, %d sub-tasks, %d attempts, %d blocked." % (k(tokens), wall, len(state["subtasks"]), attempts, blocked)]
+    if agents:
+        lines.append("By role: " + "; ".join(summary(agents, wall)[:-1]) + ".")
     log = ws / "product" / "cost-log.md"
     earlier = [r for r in (cost_rows(log.read_text()) if log.exists() else []) if r["slug"] != slug][-3:]
     if len(earlier) == 3:

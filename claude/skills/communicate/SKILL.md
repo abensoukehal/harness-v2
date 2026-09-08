@@ -50,6 +50,6 @@ Next.
 
 Detail: <plan.md> <decisions.md> <state.json> <gaps/>
 ```
-Append one line to `product/cost-log.md`: `<slug> | <tokens> | <wall_time_s> | <subtasks> | <blocked>`.
+`bin/cost` reads the runtime's transcripts, input tokens included, and `bin/report` appends one line to `product/cost-log.md`: `<slug> | <tokens> | <wall_time_s> | <subtasks> | <blocked>`.
 
 Reactions from Ali ("I don't understand", "which task?") go to `frictions`.

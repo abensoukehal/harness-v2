@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+
+from harness import HarnessError, check_slug, find_workspace, main
+from harness.cost import cost
+
+
+def run(argv):
+    dirs = []
+    while "--transcripts" in argv:
+        i = argv.index("--transcripts")
+        if i + 1 >= len(argv):
+            raise HarnessError("--transcripts needs a directory")
+        dirs.append(argv[i + 1])
+        del argv[i:i + 2]
+    if len(argv) != 1:
+        raise HarnessError("usage: cost <slug> [--transcripts DIR ...]")
+    cost(find_workspace(), check_slug(argv[0]), dirs or None)
+
+
+main(run)

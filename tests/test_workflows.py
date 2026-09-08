@@ -37,7 +37,11 @@ class Workflows(unittest.TestCase):
         self.assertLess(text.index("${T('baseline')}"), text.index("agentType: 'test-writer'"), "the baseline is a tool, run before the test-writer")
         self.assertNotIn("baseline:", text.split("const NET")[1].split("}")[0], "the test-writer does not report the baseline")
         self.assertLess(text.index("${T('net')} freeze"), text.index("${T('next')}"))
+        self.assertLess(text.index("${T('cost')}"), text.index("${T('report')}"), "input tokens land in state before the report reads them")
+        self.assertNotIn("budget.spent()", text, "output deltas are not the cost")
         self.assertLess(text.index("${T('report')}"), text.index("${T('notify')} ${slug} run_finished"))
+        for name in ["harness-plan", "harness-retro"]:
+            self.assertIn("${T('cost')}", (ROOT / "claude/workflows" / (name + ".js")).read_text(), name)
         self.assertIn("--reseed", text)
         self.assertNotIn("communicate skill", text, "the report is a tool, not an agent")
         retro = (ROOT / "claude/workflows/harness-retro.js").read_text()

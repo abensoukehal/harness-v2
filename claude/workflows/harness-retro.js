@@ -73,6 +73,7 @@ const check = await spawn(
   `clean = \`git status --porcelain\` prints nothing. tag_exists = \`git tag -l retro/${slug}\` prints the tag. report_exists = ${FEATURE}/report.md exists. ` +
   `harness_at_pin = \`git -C ${WS}/harness rev-parse HEAD\` equals the content of ${WS}/product/harness.pin. detail = the failing lines, ten at most.`,
   { label: 'verify', schema: CHECK, effort: 'low' })
+await spawn(`Run \`${T('cost')} ${slug}\`. Return ok by exit code.`, { label: 'cost', schema: TREE, effort: 'low' })
 const ok = Boolean(check && check.clean && check.tests_green && check.report_exists && check.harness_at_pin && (check.tag_exists || retro.unpushed))
 if (!ok) log(`retro check failed: ${check ? check.detail : 'no result'}`)
 return { status: ok ? 'done' : 'failed', ...retro, check }

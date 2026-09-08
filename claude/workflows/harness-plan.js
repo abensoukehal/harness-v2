@@ -107,5 +107,6 @@ if (!parsed || !parsed.ok) {
 await spawn(
   `${IO}Run:\n${T('state')} update ${slug} - <<'EOF'\n${JSON.stringify({ plan_message: planning.message })}\nEOF\n${T('notify')} ${slug} plan_ready\nReturn ok true when both exit 0, else ok false with stderr as error.`,
   { label: 'notify', schema: RESULT, effort: 'low' })
+await spawn(`${IO}Run \`${T('cost')} ${slug}\`. Return ok by exit code.`, { label: 'cost', schema: RESULT, effort: 'low' })
 log(`plan ready: ${parsed.subtask_count} sub-tasks, ${planning.gap_count} gaps, ${planning.journey_steps} journey steps`)
 return { plan: `${FEATURE}/plan.md`, subtasks: parsed.subtask_count, gaps: planning.gap_count, journey_steps: planning.journey_steps, message: planning.message }

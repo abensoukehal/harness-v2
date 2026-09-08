@@ -164,7 +164,6 @@ try {
 
   const runSubtask = async (id) => {
     const started = await update({ subtasks: [{ id, status: 'running' }] }, 'Build')
-    const spentBefore = budget.spent()
     let restarts = 0
     let worker = null
     let review = null
@@ -205,7 +204,7 @@ try {
     const tag = (lines) => (lines || []).map((l) => (l.startsWith(id) ? l : `${id} · ${l}`))
     const { lines_added, ...rest } = outcome
     const item = { id, ...rest, attempts: outcome.reason === 'runtime' ? byId()[id].attempts : Math.max(1, Math.min(3, (worker && worker.attempts) || 1)) }
-    if (outcome.status === 'done') Object.assign(item, { cost: { tokens_in: 0, tokens_out: budget.spent() - spentBefore, duration_s: 0, lines_added: outcome.lines_added }, _since: started })
+    if (outcome.status === 'done') Object.assign(item, { cost: { tokens_in: 0, tokens_out: 0, duration_s: 0, lines_added: outcome.lines_added }, _since: started })
     await update({
       subtasks: [item],
       decisions: [...tag(worker && worker.decisions), ...tag(review && review.decisions)],
@@ -274,7 +273,8 @@ state = await readState('Delivery')
 const wall = state.subtasks.reduce((n, s) => n + ((s.cost && s.cost.duration_s) || 0), 0)
 await update({ phase: 'finished', wall_time_s: wall })
 const status = !summary.delivered ? 'partial' : (summary.blocked.length || summary.skipped.length || summary.gaps.length) ? 'done with gaps' : 'done'
+await io(`Run \`${T('cost')} ${slug}\`; ok by exit code; output = stdout.`, { label: 'cost' })
 const report = await io(`Run \`${T('report')} ${slug}\` and return its full stdout as output; then run \`${T('notify')} ${slug} run_finished\`. ok when the report exits 0.`, { label: 'report' })
 if (!report || !report.ok) throw new Error(`report failed: ${report && report.error}`)
 log(`${slug}: ${status}`)
-return { status, report: report.output, blocked: summary.blocked, skipped: summary.skipped, gaps: summary.gaps, tokens_out: budget.spent() }
+return { status, report: report.output, blocked: summary.blocked, skipped: summary.skipped, gaps: summary.gaps }

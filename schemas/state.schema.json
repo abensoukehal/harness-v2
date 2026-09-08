@@ -55,6 +55,23 @@
       }
     },
     "wall_time_s": { "type": "integer", "minimum": 0 },
+    "cost_by_agent": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[A-Za-z0-9_-]+$" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role", "tokens_in", "tokens_out", "duration_s"],
+        "properties": {
+          "role": { "type": "string", "minLength": 1 },
+          "subtask": { "$ref": "#/$defs/subtaskId" },
+          "tokens_in": { "$ref": "#/$defs/count" },
+          "tokens_out": { "$ref": "#/$defs/count" },
+          "turns": { "$ref": "#/$defs/count" },
+          "duration_s": { "$ref": "#/$defs/count" }
+        }
+      }
+    },
     "net_commit": { "$ref": "#/$defs/sha" },
     "delivered": { "type": "boolean" },
     "plan_message": { "type": "string" },
