@@ -64,6 +64,30 @@ class Report(unittest.TestCase):
         run("report", "hello", ws=self.ws)
         self.assertEqual((self.ws / "product/cost-log.md").read_text().count("hello |"), 1, "cost line appended once")
 
+    def test_every_subtask_lands_in_exactly_one_block(self):
+        state = load_state(self.ws, "hello")
+        state.update(phase="safety_net", delivered=False)
+        state["subtasks"] += [st("st-05", "api", "svc", goal="Archived rows stay hidden by default"),
+                              st("st-06", "web", "web", status="running", goal="The toggle shows archived rows")]
+        save_state(self.ws, "hello", state)
+        text = run("report", "hello", ws=self.ws).stdout
+        works, rest = text.split("What didn't land.")
+        missed = rest.split("Assumptions I made.")[0]
+        for goal in [s["goal"] for s in state["subtasks"]]:
+            self.assertEqual((goal in works) + (goal in missed), 1, goal)
+        self.assertIn("- Archived rows stay hidden by default: the run stopped before it started", missed)
+        self.assertIn("- The toggle shows archived rows: the run stopped while it was under way", missed)
+        self.assertNotIn("Everything planned landed", text)
+        state["subtasks"] = [s for s in state["subtasks"] if s["status"] == "done"]
+        state.update(phase="finished", delivered=True)
+        save_state(self.ws, "hello", state)
+        text = run("report", "hello", ws=self.ws).stdout
+        self.assertIn("What didn't land.\nNothing.\n", text)
+        state["subtasks"] = []
+        save_state(self.ws, "hello", state)
+        text = run("report", "hello", ws=self.ws).stdout
+        self.assertIn("What works now.\nNothing landed yet.\n\nWhat didn't land.\nNothing was planned.\n", text)
+
     def test_partial_when_not_delivered_and_median_after_three_runs(self):
         state = load_state(self.ws, "hello")
         state["delivered"] = False

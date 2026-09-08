@@ -14,6 +14,9 @@ REASONS = {
     "missing_file": "it needed a file outside its list",
     "review": "the review found it not ready",
     "error": "the run lost track of it",
+    "unstable": "the run died on it three times",
+    "pending": "the run stopped before it started",
+    "running": "the run stopped while it was under way",
 }
 
 
@@ -39,21 +42,21 @@ def build_report(ws, slug):
     folder = feature_dir(ws, slug)
     status = status_of(state)
     done = [s for s in state["subtasks"] if s["status"] == "done"]
-    missed = [s for s in state["subtasks"] if s["status"] in ("blocked", "skipped")]
+    missed = [s for s in state["subtasks"] if s["status"] != "done"]  # every sub-task lands in exactly one block (13.2)
     asks = [s for s in state["subtasks"] if s.get("ask")]
     lines = ["%s — %s" % (slug, status), "", "What works now."]
     lines += ["- " + s.get("goal", s["id"]) for s in done] or ["Nothing landed yet."]
     lines += ["", "What didn't land."]
     goal_of = {s["id"]: s.get("goal", s["id"]) for s in state["subtasks"]}
     for s in missed:
-        why = s.get("reason", "")
+        why = s.get("reason", "") if s["status"] in ("blocked", "skipped") else s["status"]
         if why.startswith("depends on "):
             text = "waits on " + " and ".join(goal_of.get(d.strip(), d.strip()).lower() for d in why[len("depends on "):].split(","))
         else:
             text = REASONS.get(why, why)
         lines.append("- %s: %s" % (s.get("goal", s["id"]), text))
     if not missed:
-        lines.append("Everything planned landed.")
+        lines.append("Nothing." if done else "Nothing was planned.")
     for s in asks:
         # The report points at the feature folder once, at the end; the parked ask keeps its question and options only.
         body = [l for l in render(s["ask"]).rstrip().splitlines() if not l.startswith(("Still running:", "Detail:"))]
