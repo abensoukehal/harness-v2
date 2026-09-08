@@ -30,7 +30,7 @@ class Report(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.ws = env_workspace(Path(self.tmp.name))
-        (self.ws / "product/features/hello/spec-gaps.md").write_text("# gaps\n\n## Which format wins\nAnswer: comma.\n\n## Empty export\nAnswer: a header row.\n")
+        (self.ws / "product/features/hello/spec-gaps.md").write_text("# gaps\n\n## Which format wins?\nAssumed: comma, the common case.\nAffects: st-01\n\n## Empty export?\nAssumed: a header row and nothing else.\nAffects: st-01\n")
         state = load_state(self.ws, "hello")
         state.update(phase="finished", delivered=True, wall_time_s=300, subtasks=[
             st("st-01", "api", "svc", status="done", attempts=1, commit="a" * 40, cost=COST, goal="Orders export as CSV"),
@@ -52,7 +52,7 @@ class Report(unittest.TestCase):
         self.assertTrue(text.rstrip().endswith("product/features/hello/gaps/"))
         for line in ["- Orders export as CSV", "- The export button shows on the orders screen: its checks stayed red after three attempts",
                      "- Done exports are struck through: waits on the export button shows on the orders screen",
-                     "- Each row carries a summary: it needs an answer, below", "A. Comma separated (recommended)", "- Which format wins", "- Empty export",
+                     "- Each row carries a summary: it needs an answer, below", "A. Comma separated (recommended)", "- Which format wins? comma, the common case.", "- Empty export? a header row and nothing else.",
                      "150 tokens, 300 s wall time, 4 sub-tasks, 5 attempts, 2 blocked.", "No three earlier runs to compare against.",
                      "Answer the question above first.", "Open a PR from feature/hello."]:
             self.assertIn(line, text, line)

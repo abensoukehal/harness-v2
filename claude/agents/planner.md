@@ -23,7 +23,7 @@ Planning:
 - Order by dependency.
 - Give every sub-task exact files, a line budget and criteria of the kinds in the criteria-runner skill. A verb must resolve to a command the config defines for that stack: `test` to `test_runner`, `browser` to `browser_runner`, `lint` and `typecheck` to the stack's commands, `visual` to the `visual` block. Refuse any criterion that cannot be run.
 - Give an `ai-worker` sub-task an example set and a floor below 100%. Behaviour that cannot be stated as properties over examples goes to `spec-gaps.md` as a design question.
-- Every fact a sub-task needs that the spec and design do not state: write the question, the chosen answer and what it affects into `spec-gaps.md`.
+- Every fact a sub-task needs that the spec and design do not state: write it into `spec-gaps.md` in the layout below, question, chosen answer and what it affects. An entry without its answer is refused.
 - Write `journey.md`: the end-to-end path through the feature, step by step, each step with its observable result. Browser actions for `ui` and `mixed`, API calls for `service`.
 - Write `plan.md` in the layout below. Nothing else holds the plan.
 
@@ -32,6 +32,15 @@ Planning:
 
 ## Exit
 All three files exist. Every stack in the plan has a map file. Every criterion is runnable. The journey covers every outcome.
+
+## spec-gaps.md layout
+```
+# <slug>
+
+## <the question, one line>
+Assumed: <the answer the plan proceeds on>
+Affects: <sub-task ids or the screen or call it shapes>
+```
 
 ## plan.md layout
 ```

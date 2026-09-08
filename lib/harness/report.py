@@ -1,9 +1,9 @@
 """The end-of-run report (13.2), from files only."""
-import re
 import statistics
 
 from .ask import render
 from .config import feature_dir, load_config, load_state
+from .gaps import parse_gaps
 
 REASONS = {
     "criteria": "its checks stayed red after three attempts",
@@ -60,8 +60,8 @@ def build_report(ws, slug):
         lines += [""] + body
     lines += ["", "Assumptions I made."]
     gaps = folder / "spec-gaps.md"
-    headings = re.findall(r"^## (.+)$", gaps.read_text(), re.M) if gaps.exists() else []
-    lines += ["- " + h for h in headings] or ["None recorded."]
+    entries = parse_gaps(gaps.read_text()) if gaps.exists() else []
+    lines += ["- %s %s" % (e["question"], e["assumed"]) for e in entries] or ["None recorded."]
     tokens = sum(s.get("cost", {}).get("tokens_in", 0) + s.get("cost", {}).get("tokens_out", 0) for s in state["subtasks"])
     attempts = sum(s["attempts"] for s in state["subtasks"])
     wall = state.get("wall_time_s", 0)

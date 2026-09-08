@@ -119,6 +119,19 @@ class Plan(unittest.TestCase):
         config.write_text(original)
         self.assertEqual(plan(self.ws, PLAN).returncode, 0)
 
+    def test_gaps_carry_the_answer_or_are_refused(self):
+        gaps = self.ws / "product/features/hello/spec-gaps.md"
+        gaps.write_text("# hello\n\n## Which delimiter wins\nAssumed: comma, the common case\nAffects: st-01\n\n## Empty export\nAffects: st-01\n")
+        done = plan(self.ws, PLAN)
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("spec-gaps.md entry has no 'Assumed:' line", done.stderr)
+        self.assertIn("\n  ## Empty export", done.stderr)
+        self.assertNotIn("Which delimiter", done.stderr)
+        gaps.write_text("# hello\n\n## Which delimiter wins\nAssumed: comma, the common case\nAffects: st-01\n")
+        done = plan(self.ws, PLAN)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(json.loads(done.stdout)["gaps"], [{"question": "Which delimiter wins", "assumed": "comma, the common case", "affects": "st-01"}])
+
     def test_twenty_one_subtasks_refused(self):
         blocks = "".join("\n## st-%02d · Step %d\nstack: api\nfiles: a.py\ndepends_on: none\nline_budget: 1\ncriteria:\n- lint\n" % (i, i) for i in range(1, 22))
         done = plan(self.ws, "# hello\nkind: service\n" + blocks)

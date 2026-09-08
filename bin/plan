@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 import json
 from harness import HarnessError, check_slug, find_workspace, main
 from harness.config import feature_dir, load_config
+from harness.gaps import parse_gaps
 from harness.plan import config_block, parse
 
 
@@ -20,6 +21,8 @@ def run(argv):
         raise HarnessError("no plan.md for %s: run /harness-plan %s first" % (slug, slug))
     cfg = load_config(ws)
     plan = parse(path.read_text(), cfg, slug)
+    gaps = feature_dir(ws, slug) / "spec-gaps.md"
+    plan["gaps"] = parse_gaps(gaps.read_text()) if gaps.exists() else []
     plan["config"] = config_block(cfg)
     print(json.dumps(plan, indent=2))
 
