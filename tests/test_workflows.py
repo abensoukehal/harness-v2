@@ -74,6 +74,17 @@ class Workflows(unittest.TestCase):
         build = (ROOT / "claude/workflows/harness-build.js").read_text()
         self.assertIn("outcome = { status: 'skipped', reason: 'runtime' }", build)
         self.assertIn("outcome.reason === 'runtime' ? byId()[id].attempts", build, "a refusal spends no attempt")
+        for p in SCRIPTS:
+            self.assertIn("refused to start it twice: ${refusal} · runtime", p.read_text(), "%s: the friction carries the runtime's reason" % p.name)
+
+    def test_nothing_landed_skips_qa_and_delivery(self):
+        build = (ROOT / "claude/workflows/harness-build.js").read_text()
+        self.assertNotIn("result_schema", build, "the worker schema is inline, in the dialect agent() accepts")
+        self.assertNotIn("$schema", build)
+        gate = build.index("if (!state.subtasks.some((s) => s.status === 'done'))")
+        self.assertLess(gate, build.index("phase('QA')"))
+        self.assertLess(gate, build.index("await update({ delivered: false })"))
+        self.assertLess(build.index("QA and delivery skipped"), build.index("phase('QA')"))
 
     def test_pure_orchestration(self):
         for p in SCRIPTS:

@@ -48,19 +48,22 @@ const RESULT = {
 }
 
 // The runtime may refuse to spawn an agent with zero tool uses (15.2): one retry, then a friction with reason runtime. Never an attempt.
+let refusal = ''
 const spawn = async (prompt, opts) => {
   for (let i = 0; i < 2; i++) {
     try {
       const r = await agent(prompt, opts)
       if (r) return r
+      refusal = 'returned nothing'
       log(`${opts.label}: the runtime returned nothing${i ? '' : ', retrying once'}`)
     } catch (e) {
-      log(`${opts.label}: the runtime refused (${String(e && e.message).slice(0, 100)})${i ? '' : ', retrying once'}`)
+      refusal = String(e && e.message).slice(0, 160)
+      log(`${opts.label}: the runtime refused (${refusal})${i ? '' : ', retrying once'}`)
     }
   }
   return null
 }
-const RUNTIME = (label) => `${label} · the runtime refused to start it twice · runtime`
+const RUNTIME = (label) => `${label} · the runtime refused to start it twice: ${refusal} · runtime`
 const parseStep = () => agent(
   `${IO}Run \`${T('plan')} ${slug}\`. Exit 0: ok true, subtask_count = length of "subtasks" in its JSON. Otherwise ok false, error = its stderr verbatim.`,
   { label: 'parse plan', schema: RESULT, effort: 'low' })

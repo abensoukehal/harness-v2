@@ -34,8 +34,8 @@ def seconds(stamp):
     return datetime.strptime(stamp[:19], "%Y-%m-%dT%H:%M:%S").timestamp()
 
 
-def record(path, slug):
-    """One agent's transcript: None unless its first message names the feature."""
+def record(path, slug, ws):
+    """One agent's transcript: None unless its first message names the feature and the workspace, since one session can serve several workspaces."""
     meta = path.with_suffix(".meta.json")
     role = json.loads(meta.read_text()).get("agentType", "io") if meta.exists() else "io"
     role = ROLES.get(role, role)
@@ -56,7 +56,7 @@ def record(path, slug):
         if stamp:
             start = start or stamp
             end = stamp
-    if first is None or not re.search(r"(?<![a-z0-9-])%s(?![a-z0-9-])" % re.escape(slug), first):
+    if first is None or not re.search(r"%s(?![\w-])" % re.escape(str(ws)), first) or not re.search(r"(?<![a-z0-9-])%s(?![a-z0-9-])" % re.escape(slug), first):
         return None
     out = {"role": role, "tokens_in": tokens_in, "tokens_out": tokens_out, "turns": turns,
            "duration_s": int(seconds(end) - seconds(start)) if start and end else 0}
@@ -72,7 +72,7 @@ def cost(ws, slug, dirs=None, out=sys.stdout):
     spans = []
     for d in transcript_dirs(dirs):
         for path in sorted(d.glob("agent-*.jsonl")):
-            found = record(path, slug)
+            found = record(path, slug, ws)
             if found:
                 agents[path.stem[len("agent-"):]], span = found
                 spans.append(span)

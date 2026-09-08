@@ -34,9 +34,9 @@ const LAUNCH = {
   type: 'object',
   properties: {
     plan_ok: { type: 'boolean' }, plan_error: { type: 'string' }, plan: { type: 'object' },
-    state_exists: { type: 'boolean' }, state: { type: 'object' }, result_schema: { type: 'object' },
+    state_exists: { type: 'boolean' }, state: { type: 'object' },
   },
-  required: ['plan_ok', 'state_exists', 'result_schema'],
+  required: ['plan_ok', 'state_exists'],
 }
 const STATE = { type: 'object', properties: { state: { type: 'object' } }, required: ['state'] }
 const NET = {
@@ -48,6 +48,26 @@ const NET = {
   required: ['zones'],
 }
 const strings = { type: 'array', items: { type: 'string' } }
+// The worker result in the schema dialect agent() accepts: no draft declaration, no $ref, no conditionals. The full contract stays in
+// schemas/worker.result.schema.json; bin/state validates an ask against it on update.
+const WORKER = {
+  type: 'object',
+  properties: {
+    status: { enum: ['done', 'failed', 'blocked', 'restart', 'needs'] }, report: { type: 'string' }, files: strings, decisions: strings, frictions: strings,
+    attempts: { type: 'integer' }, lines_added: { type: 'integer' }, last_error: { type: 'string' },
+    reason: { enum: ['oracle', 'budget', 'environment', 'missing_file'] }, stack: { type: 'string' },
+    ask: {
+      type: 'object',
+      properties: {
+        where: { type: 'string' }, stuck: { type: 'string' }, tried: strings, question: { type: 'string' },
+        options: { type: 'array', items: { type: 'object', properties: { letter: { enum: ['A', 'B', 'C'] }, text: { type: 'string' }, recommended: { type: 'boolean' } }, required: ['letter', 'text', 'recommended'] } },
+        still_running: { type: 'string' }, detail: { type: 'string' },
+      },
+      required: ['where', 'stuck', 'tried', 'question', 'options', 'still_running', 'detail'],
+    },
+  },
+  required: ['status', 'report', 'files', 'decisions', 'frictions', 'attempts'],
+}
 const REVIEW = {
   type: 'object',
   properties: {
@@ -68,19 +88,22 @@ const QA = {
 }
 
 // The runtime may refuse to spawn an agent with zero tool uses (15.2): one retry, then a friction with reason runtime. Never an attempt.
+let refusal = ''
 const spawn = async (prompt, opts) => {
   for (let i = 0; i < 2; i++) {
     try {
       const r = await agent(prompt, opts)
       if (r) return r
+      refusal = 'returned nothing'
       log(`${opts.label}: the runtime returned nothing${i ? '' : ', retrying once'}`)
     } catch (e) {
-      log(`${opts.label}: the runtime refused (${String(e && e.message).slice(0, 100)})${i ? '' : ', retrying once'}`)
+      refusal = String(e && e.message).slice(0, 160)
+      log(`${opts.label}: the runtime refused (${refusal})${i ? '' : ', retrying once'}`)
     }
   }
   return null
 }
-const RUNTIME = (label) => `${label} · the runtime refused to start it twice · runtime`
+const RUNTIME = (label) => `${label} · the runtime refused to start it twice: ${refusal} · runtime`
 const io = (task, opts = {}) => agent(IO + task, { effort: 'low', schema: OK, ...opts })
 const readState = async (phaseName) => {
   const r = await spawn(`${IO}Run \`${T('state')} get ${slug}\` and return its JSON verbatim as state.`, { label: 'read state', schema: STATE, effort: 'low', phase: phaseName })
@@ -102,15 +125,13 @@ const clip = (text) => (text || '').split('\n').slice(-10).join('\n').slice(0, 2
 phase('Launch')
 const launch = await spawn(
   `${IO}Run \`${T('plan')} ${slug}\`. Non-zero exit: plan_ok false, plan_error = its stderr verbatim. Exit 0: plan_ok true, plan = its stdout parsed as JSON, verbatim. ` +
-  `Then run \`${T('state')} get ${slug}\`: non-zero exit gives state_exists false; otherwise state_exists true and state = its JSON verbatim. ` +
-  'Then result_schema = the JSON in harness/schemas/worker.result.schema.json, verbatim.',
+  `Then run \`${T('state')} get ${slug}\`: non-zero exit gives state_exists false; otherwise state_exists true and state = its JSON verbatim.`,
   { label: 'launch', schema: LAUNCH, effort: 'low' })
 if (!launch) throw new Error('launch agent returned nothing')
 if (!launch.plan_ok) throw new Error(`plan.md refused:\n${launch.plan_error}`)
 if (!launch.state_exists) throw new Error(`no state for ${slug}: run /harness-plan ${slug} first`)
 const plan = launch.plan
 const cfg = plan.config
-const WORKER = launch.result_schema
 const model = (role) => (cfg.models && cfg.models[role] ? { model: cfg.models[role] } : {})
 let state = launch.state
 const resuming = state.subtasks.length > 0
@@ -226,45 +247,50 @@ try {
   }
   state = await readState('Build')
 
-  // QA
-  phase('QA')
-  await update({ phase: 'qa' })
-  const runQA = () => agent(
-    `Workspace root: ${WS}. Feature ${slug}. Global QA per your Method: ${FEATURE}/journey.md, the safety net, every criterion in ${FEATURE}/state.json, the client suite against client_test_baseline, visual diff on design/. Return the failures.`,
-    { agentType: 'qa', label: 'global qa', schema: QA, ...model('qa') })
-  let fixes = 0
-  let qa = await runQA()
-  if (!qa) { await refused('global qa', 'QA'); qa = { failures: [{ kind: 'qa', subtask: 'none', detail: 'global QA did not run: the runtime refused to start it twice' }] }; fixes = cfg.max_fixes }
-  while (qa.failures.length && fixes < cfg.max_fixes) {
-    for (const f of qa.failures) {
-      if (fixes >= cfg.max_fixes) break
-      fixes += 1
-      const st = byId()[f.subtask]
-      if (!st) { log(`fix ${fixes}/${cfg.max_fixes}: ${f.subtask} is not a sub-task, left as a gap`); continue }
-      const brief = await io(`Run \`${T('briefing')} ${slug} ${f.subtask}\`; output = its stdout verbatim.`, { label: `${f.subtask} briefing` })
-      const mission = `${brief && brief.output}\n\n# QA failure to fix\nkind: ${f.kind}\nexpected: ${f.expected || ''}\nobserved: ${f.observed || ''}\n${f.detail}\nFix this failure only.`
-      const w = await spawn(mission, { agentType: 'worker', label: `fix ${f.subtask}`, schema: WORKER, ...model('worker') })
-      let r = null
-      if (w && w.status === 'done') {
-        r = await spawn(`${mission}\n\n# Worker report\n${w.report}`, { agentType: 'reviewer', label: `fix ${f.subtask} review`, schema: REVIEW, ...model('reviewer') })
+  if (!state.subtasks.some((s) => s.status === 'done')) {
+    await update({ delivered: false })
+    log('nothing landed: QA and delivery skipped')
+  } else {
+    // QA
+    phase('QA')
+    await update({ phase: 'qa' })
+    const runQA = () => agent(
+      `Workspace root: ${WS}. Feature ${slug}. Global QA per your Method: ${FEATURE}/journey.md, the safety net, every criterion in ${FEATURE}/state.json, the client suite against client_test_baseline, visual diff on design/. Return the failures.`,
+      { agentType: 'qa', label: 'global qa', schema: QA, ...model('qa') })
+    let fixes = 0
+    let qa = await runQA()
+    if (!qa) { await refused('global qa', 'QA'); qa = { failures: [{ kind: 'qa', subtask: 'none', detail: 'global QA did not run: the runtime refused to start it twice' }] }; fixes = cfg.max_fixes }
+    while (qa.failures.length && fixes < cfg.max_fixes) {
+      for (const f of qa.failures) {
+        if (fixes >= cfg.max_fixes) break
+        fixes += 1
+        const st = byId()[f.subtask]
+        if (!st) { log(`fix ${fixes}/${cfg.max_fixes}: ${f.subtask} is not a sub-task, left as a gap`); continue }
+        const brief = await io(`Run \`${T('briefing')} ${slug} ${f.subtask}\`; output = its stdout verbatim.`, { label: `${f.subtask} briefing` })
+        const mission = `${brief && brief.output}\n\n# QA failure to fix\nkind: ${f.kind}\nexpected: ${f.expected || ''}\nobserved: ${f.observed || ''}\n${f.detail}\nFix this failure only.`
+        const w = await spawn(mission, { agentType: 'worker', label: `fix ${f.subtask}`, schema: WORKER, ...model('worker') })
+        let r = null
+        if (w && w.status === 'done') {
+          r = await spawn(`${mission}\n\n# Worker report\n${w.report}`, { agentType: 'reviewer', label: `fix ${f.subtask} review`, schema: REVIEW, ...model('reviewer') })
+        }
+        log(`fix ${fixes}/${cfg.max_fixes}: ${f.subtask} ${f.kind} ${r && r.status === 'done' ? 'fixed' : 'not fixed'}`)
       }
-      log(`fix ${fixes}/${cfg.max_fixes}: ${f.subtask} ${f.kind} ${r && r.status === 'done' ? 'fixed' : 'not fixed'}`)
+      qa = (await runQA()) || { failures: [] }
     }
-    qa = (await runQA()) || { failures: [] }
-  }
-  summary.gaps = qa.failures.map((f) => `${f.subtask} ${f.kind}: ${f.detail.split('\n')[0]}`)
-  if (summary.gaps.length) log(`QA stopped at ${fixes} fixes; ${summary.gaps.length} failures remain as known gaps`)
+    summary.gaps = qa.failures.map((f) => `${f.subtask} ${f.kind}: ${f.detail.split('\n')[0]}`)
+    if (summary.gaps.length) log(`QA stopped at ${fixes} fixes; ${summary.gaps.length} failures remain as known gaps`)
 
-  // Delivery
-  phase('Delivery')
-  state = await readState('Delivery')
-  await update({ phase: 'delivery' })
-  const pushes = Object.values(state.worktrees).map((wt) =>
-    `git -C ${WS}/${wt} push origin ${state.branch}` + (cfg.mode === 'direct_merge' ? ` && git -C ${WS}/${wt} push origin ${state.branch}:${cfg.target_branch}` : ''))
-  const delivery = await io(`Run, stopping at the first failure:\n${pushes.join('\n')}\nok when every command exits 0; output = the last 20 lines of output.`, { label: 'push' })
-  summary.delivered = Boolean(delivery && delivery.ok)
-  await update({ delivered: summary.delivered, ...(summary.delivered ? {} : { frictions: [`delivery · push refused · ${clip(delivery && delivery.output)}`] }) })
-  if (!summary.delivered) log('push refused: recorded as a friction')
+    // Delivery
+    phase('Delivery')
+    state = await readState('Delivery')
+    await update({ phase: 'delivery' })
+    const pushes = Object.values(state.worktrees).map((wt) =>
+      `git -C ${WS}/${wt} push origin ${state.branch}` + (cfg.mode === 'direct_merge' ? ` && git -C ${WS}/${wt} push origin ${state.branch}:${cfg.target_branch}` : ''))
+    const delivery = await io(`Run, stopping at the first failure:\n${pushes.join('\n')}\nok when every command exits 0; output = the last 20 lines of output.`, { label: 'push' })
+    summary.delivered = Boolean(delivery && delivery.ok)
+    await update({ delivered: summary.delivered, ...(summary.delivered ? {} : { frictions: [`delivery · push refused · ${clip(delivery && delivery.output)}`] }) })
+    if (!summary.delivered) log('push refused: recorded as a friction')
+  }
 } finally {
   await io(`Run \`${T('cleanup')} ${slug}\`.`, { label: 'cleanup', phase: 'Delivery' })
 }
