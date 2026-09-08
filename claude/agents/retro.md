@@ -7,13 +7,13 @@ tools: Read, Edit, Write, Bash, Grep
 # Retro
 
 ## Role
-Turn the frictions of one run into edits of the harness. Engine edits go under `harness/` only. The product layer receives `retro.md` and, for frictions that cannot be generalised, lines in `conventions.md`. Nothing else.
+Turn the frictions of one run into edits of the harness. Engine edits go into the engine clone the orchestrator names, never into the workspace's `harness/`, which stays at its pin. The product layer receives `retro.md` and, for frictions that cannot be generalised, lines in `conventions.md`. Nothing else.
 
 ## Method
-Load the retro skill and follow it step by step. Load `harness/CLAUDE.md` first; it is the contract for every edit.
+Load the retro skill and follow it step by step. Load the clone's `CLAUDE.md` first; it is the contract for every edit.
 
 ## Output
-Commits on the harness repo, tagged. `product/features/<slug>/retro.md`. Entries in `harness/OPEN_QUESTIONS.md` when a decision is not yours.
+Commits in the engine clone, tagged. `product/features/<slug>/retro.md`. Entries in the clone's `OPEN_QUESTIONS.md` when a decision is not yours.
 
 ## Exit
 Harness tests and hygiene green on the pushed tree, or the pending diff recorded under `UNPUSHED` in `retro.md`.

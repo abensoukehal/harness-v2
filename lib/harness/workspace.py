@@ -45,15 +45,15 @@ def init(client, root, config=None, out=sys.stdout):
     if origin.returncode == 0:
         git("remote", "set-url", "origin", origin.stdout.strip(), cwd=ws / "harness")
     (ws / PIN).write_text(git("rev-parse", "HEAD", cwd=ws / "harness") + "\n")
-    install_harness(ws)
+    install_harness(ws / "harness")
     if config:
         clone_repos(ws, load_config(ws), strict=True, out=out)
     link(ws, out)
     return ws
 
 
-def install_harness(ws):
-    done = subprocess.run(["npm", "ci", "--no-fund", "--no-audit", "--prefer-offline"], cwd=ws / "harness", capture_output=True, text=True)
+def install_harness(tree):
+    done = subprocess.run(["npm", "ci", "--no-fund", "--no-audit", "--prefer-offline"], cwd=tree, capture_output=True, text=True)
     if done.returncode:
         raise HarnessError("harness dependencies did not install:\n%s" % "\n".join(done.stderr.splitlines()[-10:]))
 

@@ -40,6 +40,12 @@ class Workflows(unittest.TestCase):
         self.assertLess(text.index("${T('report')}"), text.index("${T('notify')} ${slug} run_finished"))
         self.assertIn("--reseed", text)
         self.assertNotIn("communicate skill", text, "the report is a tool, not an agent")
+        retro = (ROOT / "claude/workflows/harness-retro.js").read_text()
+        self.assertLess(retro.index("${T('retro-tree')}"), retro.index("agentType: 'retro'"), "the retro gets its own clone before it edits")
+        self.assertIn("harness_at_pin", retro)
+        skill = (ROOT / "claude/skills/retro/SKILL.md").read_text()
+        self.assertNotIn("git -C harness pull", skill)
+        self.assertNotIn("harness/bin/tag-push", skill)
         plan = (ROOT / "claude/workflows/harness-plan.js").read_text()
         self.assertIn("${T('notify')} ${slug} plan_ready", plan)
 
