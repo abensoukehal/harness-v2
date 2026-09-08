@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+
+import os
+from harness import HARNESS_ROOT, HarnessError, main
+from harness.workspace import init
+
+
+def run(argv):
+    root = None
+    if "--root" in argv:
+        i = argv.index("--root")
+        root = Path(argv[i + 1]) if i + 1 < len(argv) else None
+        del argv[i:i + 2]
+    if len(argv) != 1 or root is False:
+        raise HarnessError("usage: init <client> [--root DIR]")
+    root = root or Path(os.environ.get("HARNESS_WORKSPACES") or HARNESS_ROOT.parent / "workspaces")
+    print(init(argv[0], root.resolve()))
+
+
+main(run)
