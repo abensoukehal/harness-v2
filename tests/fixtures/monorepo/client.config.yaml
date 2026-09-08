@@ -1,0 +1,58 @@
+client: example-mono
+stacks:
+  web:
+    repo: mono
+    path: repos/mono/apps/web
+    framework: vite@5
+    package_manager: npm
+    commands:
+      install: npm ci
+      dev: npm run dev -- --port ${PORT_WEB}
+      build: npm run build
+      test: npm test
+    env_file: web.env
+    dev_url: http://localhost:${PORT_WEB}
+    depends_on: [api]
+    health:
+      http: http://localhost:${PORT_WEB}/
+      expect_status: 200
+  api:
+    repo: mono
+    path: repos/mono/services/api
+    framework: fastapi@0.115
+    commands:
+      install: pip install -e .
+      dev: uvicorn app.main:app --port ${PORT_API}
+      test: pytest
+      lint: ruff check .
+    env_file: api.env
+    dev_url: http://localhost:${PORT_API}
+    logs: logs/api.log
+    health:
+      log: "Application startup complete"
+    health_timeout_s: 90
+    seed: python -m app.seed
+
+delivery:
+  base_branch: main
+  target_branch: main
+  branch_prefix: feat/
+  mode: direct_merge
+  commit_author:
+    name: Example Dev
+    email: dev@example.com
+
+notify:
+  telegram:
+    chat_id_ref: telegram_chat_id
+  events: [plan_ready, run_finished]
+
+test_runner:
+  web: playwright
+  api: pytest --rootdir=product/tests/api
+
+budget:
+  tokens_per_feature: 1500000
+
+qa:
+  max_fixes: 6

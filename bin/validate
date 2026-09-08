@@ -1,0 +1,29 @@
+#!/usr/bin/env node
+import { schemaFor, validateFile } from "../lib/validate.js";
+
+const args = process.argv.slice(2);
+const flag = args.indexOf("--schema");
+const explicit = flag >= 0 ? args.splice(flag, 2)[1] : undefined;
+const [file] = args;
+
+if (!file || args.length !== 1) fail(2, "usage: validate <path> [--schema config|state]");
+const schema = explicit ?? schemaFor(file);
+if (!["config", "state"].includes(schema)) {
+  fail(2, explicit ? `unknown schema "${explicit}"; use config or state` : `${file}: cannot tell the schema from the file name; pass --schema config|state`);
+}
+
+let result;
+try {
+  result = validateFile(file, schema);
+} catch (e) {
+  fail(2, `${file}: ${e.message}`);
+}
+if (!result.ok) {
+  for (const e of result.errors) console.error(`${file}:${e.path}: ${e.message}`);
+  process.exit(1);
+}
+
+function fail(code, message) {
+  console.error(message);
+  process.exit(code);
+}

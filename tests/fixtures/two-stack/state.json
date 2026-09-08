@@ -1,0 +1,75 @@
+{
+  "feature": "checkout-coupons",
+  "kind": "mixed",
+  "harness_commit": "0f3a9c2b7d1e4f6a8b9c0d1e2f3a4b5c6d7e8f90",
+  "branch": "feature/checkout-coupons",
+  "phase": "build",
+  "ports": { "frontend": 51023, "backend": 51024 },
+  "worktrees": {
+    "frontend": ".worktrees/checkout-coupons/frontend",
+    "backend": ".worktrees/checkout-coupons/backend"
+  },
+  "subtasks": [
+    {
+      "id": "st-01",
+      "stack": "backend",
+      "status": "done",
+      "goal": "Coupon codes can be applied to a cart through the API",
+      "files": ["repos/backend/shop/cart/views.py", "repos/backend/shop/cart/serializers.py"],
+      "depends_on": [],
+      "line_budget": 120,
+      "exit_criteria": [
+        { "kind": "test", "pattern": "backend/test_cart_coupons.py" },
+        { "kind": "http", "method": "POST", "url": "http://localhost:${PORT_BACKEND}/api/cart/coupon", "expect_status": 200 },
+        { "kind": "lint" }
+      ],
+      "attempts": 1,
+      "commit": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+      "tokens_in": 84210,
+      "tokens_out": 6120,
+      "duration_s": 412,
+      "lines_added": 98
+    },
+    {
+      "id": "st-02",
+      "stack": "frontend",
+      "status": "blocked",
+      "goal": "The cart page shows a coupon field and the discounted total",
+      "files": ["repos/frontend/app/cart/page.tsx"],
+      "depends_on": ["st-01"],
+      "line_budget": 80,
+      "exit_criteria": [
+        { "kind": "browser", "script": "frontend/cart-coupon.spec.ts" },
+        { "kind": "visual", "region": "cart-summary", "reference": "design/cart.png" },
+        { "kind": "typecheck" }
+      ],
+      "attempts": 3,
+      "reason": "oracle",
+      "last_error": "cart-coupon.spec.ts expects the total in .cart-total but the existing page renders it in .summary-total",
+      "interruptions": 0
+    },
+    {
+      "id": "st-03",
+      "stack": "frontend",
+      "status": "pending",
+      "goal": "An invalid coupon shows the API error message inline",
+      "files": ["repos/frontend/app/cart/page.tsx"],
+      "depends_on": ["st-02"],
+      "attempts": 0,
+      "exit_criteria": [
+        { "kind": "browser", "script": "frontend/cart-coupon-invalid.spec.ts" },
+        { "kind": "log", "stack": "backend", "pattern": "coupon rejected", "present": true }
+      ]
+    }
+  ],
+  "decisions": ["st-01 · coupon lookup is case-insensitive · existing pattern in shop/cart/models.py"],
+  "frictions": ["st-02 · safety net selector names differ from the page markup"],
+  "accepted_gaps": [],
+  "baseline": { "backend": ["test_legacy_export"], "frontend": [] },
+  "ingestion": {
+    "stacks": ["backend", "frontend"],
+    "zones": ["cart-api", "cart-page"],
+    "summary": "Two zones touched: the cart API and the cart page."
+  },
+  "wall_time_s": 5400
+}

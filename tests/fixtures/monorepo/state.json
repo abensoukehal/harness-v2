@@ -1,0 +1,53 @@
+{
+  "feature": "order-export",
+  "kind": "service",
+  "harness_commit": "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d",
+  "branch": "feat/order-export",
+  "phase": "qa",
+  "ports": { "web": 52010, "api": 52011 },
+  "worktrees": { "mono": ".worktrees/order-export/mono" },
+  "subtasks": [
+    {
+      "id": "st-01",
+      "stack": "api",
+      "status": "done",
+      "goal": "Orders can be exported as CSV through the API",
+      "files": ["repos/mono/services/api/app/orders/export.py"],
+      "depends_on": [],
+      "exit_criteria": [
+        { "kind": "http", "method": "GET", "url": "http://localhost:${PORT_API}/orders/export.csv", "expect_status": 200 }
+      ],
+      "attempts": 2,
+      "commit": "1234567890abcdef1234567890abcdef12345678",
+      "tokens_in": 51200,
+      "tokens_out": 3900,
+      "duration_s": 300,
+      "lines_added": 64
+    },
+    {
+      "id": "st-02",
+      "stack": "api",
+      "status": "skipped",
+      "goal": "Exports over ten thousand rows are streamed",
+      "depends_on": ["st-03"],
+      "attempts": 0,
+      "reason": "depends on st-03 which is blocked"
+    },
+    {
+      "id": "st-03",
+      "stack": "api",
+      "status": "running",
+      "goal": "Each exported row carries a one-line summary of the order",
+      "files": ["repos/mono/services/api/app/orders/summarize.py"],
+      "depends_on": ["st-01"],
+      "exit_criteria": [
+        { "kind": "test", "pattern": "api/test_summarize_plumbing.py" },
+        { "kind": "examples", "set": "api/summaries.examples.json", "floor": 0.9 }
+      ],
+      "attempts": 1
+    }
+  ],
+  "decisions": [],
+  "frictions": [],
+  "accepted_gaps": []
+}

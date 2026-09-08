@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "harness/state",
+  "title": "state.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["feature", "kind", "harness_commit", "branch", "phase", "ports", "worktrees", "subtasks", "decisions", "frictions", "accepted_gaps"],
+  "properties": {
+    "feature": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "kind": { "enum": ["ui", "service", "mixed"] },
+    "harness_commit": { "$ref": "#/$defs/sha" },
+    "branch": { "type": "string", "minLength": 1 },
+    "phase": { "enum": ["ingestion", "planning", "safety_net", "build", "qa", "delivery", "retro", "finished"] },
+    "ports": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
+      "additionalProperties": { "type": "integer", "minimum": 1024, "maximum": 65535 }
+    },
+    "worktrees": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[A-Za-z0-9._-]+$" },
+      "additionalProperties": { "type": "string", "pattern": "^\\.worktrees/" }
+    },
+    "subtasks": { "type": "array", "items": { "$ref": "#/$defs/subtask" } },
+    "decisions": { "type": "array", "items": { "type": "string" } },
+    "frictions": { "type": "array", "items": { "type": "string" } },
+    "accepted_gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["subtask", "region", "divergence_pct"],
+        "properties": {
+          "subtask": { "$ref": "#/$defs/subtaskId" },
+          "region": { "type": "string", "minLength": 1 },
+          "divergence_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+          "pair": { "type": "string" }
+        }
+      }
+    },
+    "baseline": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
+      "additionalProperties": { "type": "array", "items": { "type": "string" } }
+    },
+    "ingestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stacks", "zones", "summary"],
+      "properties": {
+        "stacks": { "type": "array", "items": { "type": "string" } },
+        "zones": { "type": "array", "items": { "type": "string" } },
+        "summary": { "type": "string" }
+      }
+    },
+    "wall_time_s": { "type": "integer", "minimum": 0 }
+  },
+  "$defs": {
+    "sha": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+    "subtaskId": { "type": "string", "pattern": "^st-[0-9]{2,}$" },
+    "count": { "type": "integer", "minimum": 0 },
+    "subtask": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "stack", "status", "attempts"],
+      "properties": {
+        "id": { "$ref": "#/$defs/subtaskId" },
+        "stack": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "status": { "enum": ["pending", "running", "done", "blocked", "skipped"] },
+        "attempts": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "goal": { "type": "string" },
+        "files": { "type": "array", "items": { "type": "string" } },
+        "depends_on": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/subtaskId" } },
+        "line_budget": { "type": "integer", "minimum": 0 },
+        "exit_criteria": { "type": "array", "items": { "$ref": "#/$defs/criterion" } },
+        "tokens_in": { "$ref": "#/$defs/count" },
+        "tokens_out": { "$ref": "#/$defs/count" },
+        "duration_s": { "$ref": "#/$defs/count" },
+        "lines_added": { "$ref": "#/$defs/count" },
+        "commit": { "$ref": "#/$defs/sha" },
+        "reason": { "type": "string", "minLength": 1 },
+        "last_error": { "type": "string", "maxLength": 2000 },
+        "interruptions": { "$ref": "#/$defs/count" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "done" } } },
+          "then": { "required": ["commit", "tokens_in", "tokens_out", "duration_s", "lines_added"] }
+        },
+        {
+          "if": { "properties": { "status": { "enum": ["blocked", "skipped"] } } },
+          "then": { "required": ["reason"] }
+        }
+      ]
+    },
+    "criterion": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["test", "http", "browser", "log", "visual", "lint", "typecheck", "examples"] }
+      },
+      "allOf": [
+        { "if": { "properties": { "kind": { "const": "test" } } }, "then": { "required": ["pattern"] } },
+        { "if": { "properties": { "kind": { "const": "http" } } },
+          "then": { "required": ["method", "url", "expect_status"],
+                    "properties": { "expect_status": { "type": "integer", "minimum": 100, "maximum": 599 } } } },
+        { "if": { "properties": { "kind": { "const": "browser" } } }, "then": { "required": ["script"] } },
+        { "if": { "properties": { "kind": { "const": "log" } } },
+          "then": { "required": ["stack", "pattern", "present"], "properties": { "present": { "type": "boolean" } } } },
+        { "if": { "properties": { "kind": { "const": "visual" } } }, "then": { "required": ["region", "reference"] } },
+        { "if": { "properties": { "kind": { "const": "examples" } } },
+          "then": { "required": ["set", "floor"],
+                    "properties": { "floor": { "type": "number", "minimum": 0, "exclusiveMaximum": 1 } } } }
+      ]
+    }
+  }
+}

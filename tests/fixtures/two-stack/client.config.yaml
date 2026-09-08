@@ -1,0 +1,75 @@
+client: example-split
+stacks:
+  frontend:
+    repo: frontend
+    path: repos/frontend
+    framework: nextjs@14
+    package_manager: pnpm
+    commands:
+      install: pnpm install
+      dev: pnpm dev --port ${PORT_FRONTEND}
+      build: pnpm build
+      lint: pnpm lint
+      typecheck: pnpm tsc --noEmit
+      test: pnpm test
+    env_file: .env.local
+    dev_url: http://localhost:${PORT_FRONTEND}
+    depends_on: [backend]
+    health:
+      log: "ready on"
+    health_timeout_s: 120
+  backend:
+    repo: backend
+    path: repos/backend
+    framework: django@5
+    commands:
+      install: pip install -r requirements.txt
+      dev: python manage.py runserver 0.0.0.0:${PORT_BACKEND}
+      test: pytest
+      lint: ruff check .
+    env_file: .env
+    dev_url: http://localhost:${PORT_BACKEND}
+    logs: stdout
+    health:
+      http: http://localhost:${PORT_BACKEND}/healthz
+      expect_status: 200
+    health_timeout_s: 180
+    seed: python manage.py loaddata fixtures/seed.json
+
+delivery:
+  base_branch: develop
+  target_branch: develop
+  branch_prefix: feature/
+  mode: pr
+  commit_author:
+    name: Example Dev
+    email: dev@example.com
+
+git:
+  identity_hygiene: strict
+
+notify:
+  telegram:
+    chat_id_ref: telegram_chat_id
+  events: [plan_ready, run_finished, needs_answer]
+
+client_tests:
+  backend: pytest
+  frontend: pnpm test
+
+test_runner:
+  frontend: playwright
+  backend: pytest --rootdir=product/tests/backend
+
+budget:
+  tokens_per_feature: 2000000
+
+qa:
+  max_fixes: 10
+
+visual:
+  threshold_pct: 2.0
+  viewport: 1440x900
+  max_attempts: 4
+
+max_parallel_features: 2

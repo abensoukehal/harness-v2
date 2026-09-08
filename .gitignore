@@ -2,3 +2,4 @@
 *.log
 .claude/settings.local.json
 secrets/
+node_modules/

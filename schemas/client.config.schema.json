@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "harness/client.config",
+  "title": "client.config.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["client", "stacks", "delivery", "notify", "test_runner", "budget", "qa"],
+  "properties": {
+    "client": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "stacks": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
+      "additionalProperties": { "$ref": "#/$defs/stack" }
+    },
+    "delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["base_branch", "target_branch", "branch_prefix", "mode", "commit_author"],
+      "properties": {
+        "base_branch": { "type": "string", "minLength": 1 },
+        "target_branch": { "type": "string", "minLength": 1 },
+        "branch_prefix": { "type": "string", "pattern": "^[A-Za-z0-9._/-]+$" },
+        "mode": { "enum": ["pr", "direct_merge"] },
+        "commit_author": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "email"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "email": { "type": "string", "pattern": "^[^@\\s]+@[^@\\s]+$" }
+          }
+        }
+      }
+    },
+    "git": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "identity_hygiene": { "enum": ["strict"], "default": "strict" } }
+    },
+    "notify": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["telegram", "events"],
+      "properties": {
+        "telegram": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["chat_id_ref"],
+          "properties": { "chat_id_ref": { "type": "string", "minLength": 1 } }
+        },
+        "events": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["plan_ready", "run_finished", "needs_answer"] }
+        }
+      }
+    },
+    "client_tests": { "$ref": "#/$defs/commandsByStack" },
+    "test_runner": { "$ref": "#/$defs/commandsByStack" },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tokens_per_feature"],
+      "properties": { "tokens_per_feature": { "type": "integer", "minimum": 1 } }
+    },
+    "qa": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_fixes"],
+      "properties": { "max_fixes": { "type": "integer", "minimum": 0 } }
+    },
+    "visual": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["threshold_pct", "viewport", "max_attempts"],
+      "properties": {
+        "threshold_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+        "viewport": { "type": "string", "pattern": "^[0-9]+x[0-9]+$" },
+        "max_attempts": { "type": "integer", "minimum": 1, "default": 4 }
+      }
+    },
+    "max_parallel_features": { "type": "integer", "minimum": 1, "default": 2 }
+  },
+  "$defs": {
+    "command": { "type": "string", "minLength": 1 },
+    "commandsByStack": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
+      "additionalProperties": { "$ref": "#/$defs/command" }
+    },
+    "stack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo", "path", "commands", "health"],
+      "properties": {
+        "repo": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+        "path": { "type": "string", "pattern": "^repos/" },
+        "framework": { "type": "string" },
+        "package_manager": { "type": "string" },
+        "commands": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["dev"],
+          "properties": {
+            "install": { "$ref": "#/$defs/command" },
+            "dev": { "$ref": "#/$defs/command" },
+            "build": { "$ref": "#/$defs/command" },
+            "lint": { "$ref": "#/$defs/command" },
+            "typecheck": { "$ref": "#/$defs/command" },
+            "test": { "$ref": "#/$defs/command" }
+          }
+        },
+        "env_file": { "type": "string", "pattern": "^[^/]+$" },
+        "dev_url": { "type": "string", "pattern": "^https?://" },
+        "logs": { "type": "string", "default": "stdout" },
+        "depends_on": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
+        "health": {
+          "type": "object",
+          "oneOf": [
+            {
+              "title": "log check",
+              "additionalProperties": false,
+              "required": ["log"],
+              "properties": { "log": { "type": "string", "minLength": 1 } }
+            },
+            {
+              "title": "http check",
+              "additionalProperties": false,
+              "required": ["http", "expect_status"],
+              "properties": {
+                "http": { "type": "string", "minLength": 1 },
+                "expect_status": { "type": "integer", "minimum": 100, "maximum": 599 }
+              }
+            }
+          ]
+        },
+        "health_timeout_s": { "type": "integer", "minimum": 1, "default": 120 },
+        "seed": { "$ref": "#/$defs/command" }
+      }
+    }
+  }
+}
