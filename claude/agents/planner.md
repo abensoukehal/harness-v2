@@ -21,7 +21,7 @@ Planning:
 - Set `kind`: `ui`, `service` or `mixed`.
 - Derive sub-tasks: one agent, one context, well under budget. Twenty at most. Past twenty, stop and report that the feature is more than one feature.
 - Order by dependency.
-- Give every sub-task exact files, a line budget and criteria of the kinds in the criteria-runner skill. Refuse any criterion that cannot be run.
+- Give every sub-task exact files, a line budget and criteria of the kinds in the criteria-runner skill. A verb must resolve to a command the config defines for that stack: `test` to `test_runner`, `browser` to `browser_runner`, `lint` and `typecheck` to the stack's commands, `visual` to the `visual` block. Refuse any criterion that cannot be run.
 - Give an `ai-worker` sub-task an example set and a floor below 100%. Behaviour that cannot be stated as properties over examples goes to `spec-gaps.md` as a design question.
 - Every fact a sub-task needs that the spec and design do not state: write the question, the chosen answer and what it affects into `spec-gaps.md`.
 - Write `journey.md`: the end-to-end path through the feature, step by step, each step with its observable result. Browser actions for `ui` and `mixed`, API calls for `service`.

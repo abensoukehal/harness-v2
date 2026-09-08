@@ -71,8 +71,11 @@ client_tests:
   frontend: pnpm test
 
 test_runner:
-  frontend: playwright
+  frontend: pnpm vitest run
   backend: pytest --rootdir=product/tests/backend
+
+browser_runner:
+  frontend: pnpm playwright test
 
 budget:
   tokens_per_feature: 2000000

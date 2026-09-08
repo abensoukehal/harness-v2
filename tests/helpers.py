@@ -57,6 +57,10 @@ TAIL = textwrap.dedent("""
       tokens_per_feature: 100000
     qa:
       max_fixes: 3
+    visual:
+      threshold_pct: 2.0
+      viewport: 1440x900
+      max_attempts: 4
 """)
 
 WEB_DEV = ("python3 -c \"import urllib.request,os; urllib.request.urlopen('http://127.0.0.1:'+os.environ['PORT_API']+'/')\""
@@ -75,6 +79,7 @@ def env_config(web_health='log: "ready on"', web_timeout=15, web_dev=WEB_DEV, ap
             commands:
               install: %s
               dev: python3 -m http.server ${PORT_API} --bind 127.0.0.1
+              lint: "true"
             env_file: api.env
             depends_on: [db]
             health:
@@ -87,6 +92,7 @@ def env_config(web_health='log: "ready on"', web_timeout=15, web_dev=WEB_DEV, ap
             path: repos/web
             commands:
               dev: %s
+              typecheck: "true"
             env_file: web.env
             depends_on: [api]
             health:
@@ -100,7 +106,7 @@ def env_config(web_health='log: "ready on"', web_timeout=15, web_dev=WEB_DEV, ap
             health:
               tcp: ${PORT_DB}
             health_timeout_s: 15
-    """ % (extra, api_install, api_seed, web_dev, web_health, web_timeout)) + TAIL % "{api: pytest, web: playwright}"
+    """ % (extra, api_install, api_seed, web_dev, web_health, web_timeout)) + TAIL % "{api: pytest, web: vitest run}" + "browser_runner:\n  web: playwright test\n"
 
 
 MONO_CONFIG = textwrap.dedent("""

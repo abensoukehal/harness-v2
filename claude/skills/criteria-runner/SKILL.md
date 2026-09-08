@@ -10,7 +10,7 @@ Before anything: read `ports` from `state.json`, export `PORT_<STACK>` for every
 ## Kinds
 - `test <pattern>`: run `test_runner.<stack>` on the pattern under `product/tests/`. Pass: exit 0.
 - `http <METHOD> <url> <status> [<json path> = <value>]`: send the request with `${PORT_*}` expanded. Pass: the status matches and, when given, the json path holds the value.
-- `browser <script>`: run the script under `product/tests/` with `test_runner.<stack>`. Pass: exit 0. Selectors decide; screenshots never do.
+- `browser <script>`: run the script under `product/tests/` with `browser_runner.<stack>`. Pass: exit 0. Selectors decide; screenshots never do.
 - `log <stack> <present|absent> <regex>`: after the action, search `.run/<slug>/<stack>.log`, or the file named by the stack's `logs`. Pass: presence matches.
 - `visual <region> <reference>`: load the visual-diff skill. Pass: divergence under `visual.threshold_pct`.
 - `lint`, `typecheck`: run the stack's config command. Pass: exit 0.

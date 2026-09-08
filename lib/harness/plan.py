@@ -112,7 +112,7 @@ def parse(text, cfg, slug=None):
             fail(i, "line_budget must be a whole number")
         if not st["_criteria"]:
             fail(st["_line"], "sub-task has no criterion")
-        criteria = [criterion(i, text, stacks, fail) for i, text in st["_criteria"]]
+        criteria = [criterion(i, text, cfg, stack, fail) for i, text in st["_criteria"]]
         out.append({"id": st["id"], "stack": stack, "goal": st["goal"], "files": files, "depends_on": deps,
                     "line_budget": int(budget), "exit_criteria": criteria, "status": "pending", "attempts": 0,
                     "interruptions": 0, "worktree": ".worktrees/%s/%s" % (slug, stacks[stack]["repo"]),
@@ -121,16 +121,27 @@ def parse(text, cfg, slug=None):
     return {"kind": kind, "subtasks": out}
 
 
-def criterion(i, text, stacks, fail):
+def criterion(i, text, cfg, stack, fail):
+    """One criterion line. Its verb must resolve to a command the config defines for this stack (4.1), or the plan is refused here."""
+    stacks = cfg["stacks"]
     parts = text.split()
     kind, rest = parts[0], parts[1:]
+
+    def needs(key, where, value):
+        if not value:
+            fail(i, "criterion %r needs %s.%s in the config, which is missing" % (kind, where, key))
+
     if kind == "test" and len(rest) == 1:
+        needs(stack, "test_runner", cfg["test_runner"].get(stack))
         return {"kind": "test", "pattern": rest[0]}
     if kind == "browser" and len(rest) == 1:
+        needs(stack, "browser_runner", cfg.get("browser_runner", {}).get(stack))
         return {"kind": "browser", "script": rest[0]}
     if kind in ("lint", "typecheck") and not rest:
+        needs(kind, "stacks.%s.commands" % stack, stacks[stack]["commands"].get(kind))
         return {"kind": kind}
     if kind == "visual" and len(rest) == 2:
+        needs("threshold_pct", "visual", cfg.get("visual"))
         return {"kind": "visual", "region": rest[0], "reference": rest[1]}
     if kind == "http" and len(rest) >= 3:
         method, url, status = rest[0].upper(), rest[1], rest[2]

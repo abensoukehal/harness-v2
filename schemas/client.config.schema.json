@@ -63,6 +63,7 @@
     },
     "client_tests": { "$ref": "#/$defs/commandsByStack" },
     "test_runner": { "$ref": "#/$defs/commandsByStack" },
+    "browser_runner": { "$ref": "#/$defs/commandsByStack" },
     "budget": {
       "type": "object",
       "additionalProperties": false,

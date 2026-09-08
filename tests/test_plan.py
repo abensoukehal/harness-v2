@@ -97,6 +97,28 @@ class Plan(unittest.TestCase):
             self.assertIn(expected, done.stderr, expected)
             self.assertIn("\n  ", done.stderr, "the offending line is quoted")
 
+    def test_a_verb_with_no_command_behind_it_is_refused_at_parse(self):
+        config = self.ws / "product/client.config.yaml"
+        original = config.read_text()
+        for gone in ["browser_runner:\n  web: playwright test\n", "api: pytest, ", "      lint: \"true\"\n", "      typecheck: \"true\"\n",
+                     "visual:\n  threshold_pct: 2.0\n  viewport: 1440x900\n  max_attempts: 4\n"]:
+            self.assertIn(gone, original)
+        cases = [
+            ("browser_runner:\n  web: playwright test\n", "- browser web/export.spec.js", "criterion 'browser' needs browser_runner.web in the config"),
+            ("api: pytest, ", "- test api/test_export.py", "criterion 'test' needs test_runner.api in the config"),
+            ("      lint: \"true\"\n", "- lint", "criterion 'lint' needs stacks.api.commands.lint in the config"),
+            ("      typecheck: \"true\"\n", "- typecheck", "criterion 'typecheck' needs stacks.web.commands.typecheck in the config"),
+            ("visual:\n  threshold_pct: 2.0\n  viewport: 1440x900\n  max_attempts: 4\n", "- visual export-button design/orders.png", "criterion 'visual' needs visual.threshold_pct in the config"),
+        ]
+        for gone, offending, message in cases:
+            config.write_text(original.replace(gone, ""))
+            done = plan(self.ws, PLAN)
+            self.assertEqual(done.returncode, 1, offending)
+            self.assertIn(message, done.stderr, offending)
+            self.assertIn("\n  " + offending, done.stderr, offending)
+        config.write_text(original)
+        self.assertEqual(plan(self.ws, PLAN).returncode, 0)
+
     def test_twenty_one_subtasks_refused(self):
         blocks = "".join("\n## st-%02d · Step %d\nstack: api\nfiles: a.py\ndepends_on: none\nline_budget: 1\ncriteria:\n- lint\n" % (i, i) for i in range(1, 22))
         done = plan(self.ws, "# hello\nkind: service\n" + blocks)
