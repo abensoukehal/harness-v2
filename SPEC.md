@@ -38,7 +38,7 @@ client    → the client's stacks (their repos). Receives feature code only.
   CLAUDE.md              ← the ONLY CLAUDE.md. Harness entry points, points to config.
   .claude/
     workflows/ agents/ skills/   ← linked from harness/claude/ (see 2.2)
-  harness/               ← the harness repo, pinned to a commit
+  harness/               ← the harness repo, at the pinned commit (see below)
   secrets/               ← client credentials. Outside git. Never read by an agent (9.3)
   product/               ← Ali's product layer for THIS client (its own private git repo)
     client.config.yaml
@@ -109,21 +109,12 @@ stacks:
       lint: ruff check .
     dev_url: http://localhost:${PORT_BACKEND}
     logs: stdout            # or a file path, or a docker container name
-    depends_on: [db]        # start order; every name here must be a declared stack; every name here must be a declared stack
+    depends_on: [db]        # start order; every name here must be a declared stack
     health:                 # ready means this passes, not that the process exists
       http: ${PORT_BACKEND}/healthz
       expect_status: 200
     health_timeout_s: 180
     seed: python manage.py loaddata fixtures/seed.json
-  db:                       # infrastructure is a stack. Anything the run starts,
-    repo: null                # waits for, or tears down is declared here, or it cannot
-    path: null                # be a start-order dependency
-    commands:
-      dev: docker compose up -d postgres
-    health:
-      http: null
-      tcp: ${PORT_DB}
-    health_timeout_s: 60
   db:                       # infrastructure is a stack. Anything the run starts,
     repo: null                # waits for, or tears down is declared here, or it
     path: null                # cannot be a start-order dependency
@@ -163,7 +154,7 @@ test_runner:
 
 Required per stack: `commands.dev`, `health`, `health_timeout_s`. Phases 4 and 5 need every stack running and need to know when it is ready, so a stack missing any of the three fails validation instead of failing at hour two.
 
-`repo` and `path` are null only for a stack the harness starts but never edits, such as a database container.
+`repo` and `path` are null together or not at all, and only for a stack the harness starts but never edits, such as a database container. A repo-less stack gets no worktree and runs from the workspace root, and a plan sub-task cannot target one. A sub-task that needs to change it is a client infrastructure change, which is not something this system delivers.
 
 Validation runs in two passes: schema first, then cross-field checks (paths under their declared repo, `depends_on` names exist and do not cycle, `${PORT_*}` references resolve, test keys are declared stacks, worktree paths match `.worktrees/<feature>/<repo>`). Cross-field checks only run once the schema pass is clean, so a badly broken file takes two rounds to fully diagnose. That is the right order, and the validator says which pass it is reporting.
 
@@ -465,7 +456,8 @@ The VPS runs unattended, so a run dies mid-way sooner or later. `harness/bin/res
 - On resume: read `state.json`, then verify it against reality rather than trusting it. Check the branch head, check which sub-task commits exist, check whether the recorded ports are still held.
 - Reality wins on every disagreement. A sub-task marked `done` with no commit is reset to `pending`.
 - Reset the interrupted sub-task fully: `git checkout -- .` and `git clean -fd` in its worktree, drop the partial work, respawn from the briefing. Never resume a worker's context; there is none to resume.
-- Release stale ports, restart the stacks, rerun the safety net before continuing. A resumed run that skips the safety net is building on an unverified base.
+- Ports recorded in state are released if the harness still owns them, and **reallocated if anything else holds them**. A port taken by a process the harness never started cannot be released, only avoided, and a resume that insists on its old port fails for a reason that has nothing to do with the feature.
+- Restart the stacks and rerun the safety net before continuing. A resumed run that skips the safety net is building on an unverified base.
 - A run interrupted three times on the same sub-task is BLOCKED with `reason: unstable`, and the run moves on.
 
 ## 9. Confidentiality
@@ -488,7 +480,8 @@ Running a client's stacks needs their env files, database and service credential
 
 - Credentials live in `workspaces/<client>/secrets/`, outside git, outside the product layer, never in `client.config.yaml`. The config references them by name, not by value.
 - The harness injects them into stack processes as env vars at start. No agent ever reads the secrets directory, and no briefing quotes a value.
-- Every command's output is scrubbed for those values before it enters any context, so a service that echoes its connection string on boot cannot leak it into a transcript.
+- Output of stack and seed commands is scrubbed for those values before it enters any context, so a service that echoes its connection string on boot cannot leak it into a transcript.
+- **The scrubber covers what the harness runs, not what an agent runs.** A command an agent issues itself in bash reaches that agent's transcript directly, and no layer below can intercept it. What covers that gap instead: agents never read the secrets directory, briefings never quote a value, and every stack command with a secret in it is invoked through the harness rather than composed by an agent. State the limit rather than trusting a guarantee the mechanism does not provide.
 - Test data is seeded and fake. A run never touches a client's real database, staging included.
 - Deleting a workspace deletes the secrets with it.
 
@@ -528,7 +521,9 @@ The run ends but the feature does not. A client reviewer will ask for changes, a
 ## 11. Environment and ports
 
 - Dynamic allocation. At environment start the harness asks the OS for free ports, writes them into `state.json`, and injects them as `PORT_<STACK>` env vars into every command from the config and into the test runner. Nothing assumes a fixed port.
-- Cleanup at feature end (success or failure): stop all processes started by the run, release ports, remove temp files. A `harness/bin/cleanup <slug>` command does the same manually.
+- Each run owns `<workspace>/.run/<slug>/`, holding pid files and captured logs. Nothing else writes there.
+- A `logs` file path is resolved against the stack's checkout, or against the workspace root for a repo-less stack, which has no checkout to resolve against.
+- Cleanup at feature end (success or failure): stop all processes started by the run, release the ports it holds, remove `.run/<slug>/`. A second cleanup on the same slug is a no-op, not an error. `harness/bin/cleanup <slug>` does the same manually.
 - If stacks run in containers, one isolated network per feature, ports mapped outward only.
 
 ### 11.1 Bringing the environment up
@@ -536,10 +531,18 @@ The run ends but the feature does not. A client reviewer will ask for changes, a
 Phases 4 and 5 need the stacks running. On legacy code a stack can take a minute or more to boot, so a criterion that runs against a half-started service fails for the wrong reason and burns an attempt.
 
 - Stacks start in the order given by `depends_on` in the config. A stack starts only after everything it depends on is ready.
-- Ready means a `health` check from the config passed, not that the process exists. Per stack: an HTTP endpoint returning an expected status, or a log line matching a pattern. Poll until it passes or `health_timeout_s` elapses.
+- Ready means a `health` check from the config passed, not that the process exists. One of three kinds per stack: an HTTP endpoint returning an expected status, a TCP port accepting a connection, or a log line matching a pattern. Poll until it passes or `health_timeout_s` elapses.
+- `health_timeout_s` has no default. A stack whose boot time nobody has measured is a stack that will fail at the wrong moment, so the config states it.
 - A stack that never becomes healthy fails the run at the environment step, before any sub-task starts. Failing there costs one clear error; failing later costs three attempts and a misleading diagnosis.
 - Test data comes from a `seed` command per stack, run after health and before the safety net. Seeded and fake, always (section 9.3).
-- The environment comes up once per feature run and stays up across sub-tasks. A worker never starts or stops a stack; it can request a restart of one stack through the orchestrator, which reruns that stack's health check.
+- The environment comes up once per feature run and stays up across sub-tasks. A worker never starts or stops a stack.
+
+**Restarting a stack.** A worker that needs one restarted, typically after a config or dependency change, returns `RESTART: <stack>` in its structured result and stops. It does not run the command itself; a worker with the power to restart infrastructure will use it to work around a problem instead of reporting one.
+
+- The orchestrator calls `harness/bin/restart <slug> <stack>`, which stops that stack, starts it, and reruns its health check. Dependents are restarted with it, in order.
+- The port stays the same across a restart, since it is in state and nothing else claimed it.
+- The worker is respawned with the same briefing. This does not consume an attempt: the environment failed, not the sub-task.
+- Two restarts of the same stack within one sub-task is a BLOCKED sub-task with `reason: environment`. The third would be a loop.
 
 ### 11.2 Multi-feature parallelism (in scope for v1)
 
@@ -718,6 +721,8 @@ Two files the harness maintains so a conversation about the harness can start wi
 ## 19. Definition of done for the harness itself
 
 - A new workspace can be created from a template with `harness/bin/init <client>`.
+- **The pin is a file, not a convention.** `product/harness.pin` holds the harness commit the workspace runs. `init` writes it, `link` verifies it, and every workflow refuses to start when `harness/` is at a different commit. Without that check a workspace silently drifts onto whatever the last `git pull` brought, and the harness commit recorded in state describes a run that nobody can reproduce.
+- Ali moves a workspace forward with `harness/bin/pin <client> [<commit>]`, defaulting to the harness remote's HEAD. Upgrading is a deliberate act per workspace, so a bad retro cannot reach every client at once.
 - `/harness-plan` produces a plan with only machine-runnable criteria on a sample legacy repo.
 - `/harness-build` runs unattended to completion (or to BLOCKED items) on that sample, commits pass the hygiene tests, ports are released after.
 - `/harness-retro` edits harness files without adding history sections, pushes, and handles a forced push rejection by pulling and retrying.
@@ -733,6 +738,9 @@ Two files the harness maintains so a conversation about the harness can start wi
 - An agent attempting to edit a file under `product/tests/` during build is refused.
 - A regression in the client's own suite is caught by the baseline diff at QA.
 - Plan-ready, run-finished and needs-answer messages arrive on Telegram; nothing else does.
+- A workflow refuses to start when `harness/` does not match `product/harness.pin`.
+- A resume whose recorded port is held by a foreign process reallocates and continues.
+- A worker returning `RESTART:` gets a restarted stack and its original briefing, with no attempt spent.
 - A push to any ref other than the feature branch is refused by the hook, in bypass permission mode.
 - QA stops at `max_fixes` and delivers with the remaining failures named in the report.
 - An edited `plan.md` changes what the build does; a malformed one fails at launch with the offending line quoted.
@@ -764,6 +772,7 @@ So it is a test, not an instruction:
 - The check covers prose files: `CLAUDE.md`, agent files, skills, `conventions.md`, `code-map/`, `OPEN_QUESTIONS.md`.
 - It does not cover file paths, code, schemas, fixtures or machine state. A path is not prose.
 - Exactly one file is exempt: `hygiene.sh` itself, which has to name what it forbids. The exemption is a hardcoded path, not a marker other files can adopt.
+- Every other file, `CLAUDE.md` included, states the rule and points at the script for the list. One location per rule (20.2) applies to the list itself: a copy in prose is a copy that drifts.
 - Machine state carries durations, never timestamps, so `state.json` has nothing for the date grep to find. This is a real constraint on section 8, not a coincidence.
 
 **The spec file is `SPEC.md`.** A version number in a filename is the same accretion in a different place, and every file referencing it inherits it.
