@@ -79,6 +79,9 @@ class Workflows(unittest.TestCase):
 
     def test_nothing_landed_skips_qa_and_delivery(self):
         build = (ROOT / "claude/workflows/harness-build.js").read_text()
+        self.assertIn("${T('deliver')}", build, "the push is a tool that can refuse, not a git line in a prompt")
+        self.assertNotIn("push origin", build)
+        self.assertIn("!landed ? 'nothing landed'", build)
         self.assertNotIn("result_schema", build, "the worker schema is inline, in the dialect agent() accepts")
         self.assertNotIn("$schema", build)
         gate = build.index("if (!state.subtasks.some((s) => s.status === 'done'))")

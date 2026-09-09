@@ -284,12 +284,10 @@ try {
     phase('Delivery')
     state = await readState('Delivery')
     await update({ phase: 'delivery' })
-    const pushes = Object.values(state.worktrees).map((wt) =>
-      `git -C ${WS}/${wt} push origin ${state.branch}` + (cfg.mode === 'direct_merge' ? ` && git -C ${WS}/${wt} push origin ${state.branch}:${cfg.target_branch}` : ''))
-    const delivery = await io(`Run, stopping at the first failure:\n${pushes.join('\n')}\nok when every command exits 0; output = the last 20 lines of output.`, { label: 'push' })
+    // bin/deliver refuses a run with nothing landed or an unchanged branch, and records the refusal itself (10).
+    const delivery = await io(`Run \`${T('deliver')} ${slug}\`; ok by exit code; output = stdout and stderr.`, { label: 'push' })
     summary.delivered = Boolean(delivery && delivery.ok)
-    await update({ delivered: summary.delivered, ...(summary.delivered ? {} : { frictions: [`delivery · push refused · ${clip(delivery && delivery.output)}`] }) })
-    if (!summary.delivered) log('push refused: recorded as a friction')
+    if (!summary.delivered) log(`not delivered: ${clip(delivery && (delivery.error || delivery.output))}`)
   }
 } finally {
   await io(`Run \`${T('cleanup')} ${slug}\`.`, { label: 'cleanup', phase: 'Delivery' })
@@ -298,7 +296,8 @@ try {
 state = await readState('Delivery')
 const wall = state.subtasks.reduce((n, s) => n + ((s.cost && s.cost.duration_s) || 0), 0)
 await update({ phase: 'finished', wall_time_s: wall })
-const status = !summary.delivered ? 'partial' : (summary.blocked.length || summary.skipped.length || summary.gaps.length) ? 'done with gaps' : 'done'
+const landed = state.subtasks.filter((s) => s.status === 'done').length
+const status = !landed ? 'nothing landed' : !summary.delivered ? 'partial' : (landed < state.subtasks.length || summary.gaps.length) ? 'done with gaps' : 'done'
 await io(`Run \`${T('cost')} ${slug}\`; ok by exit code; output = stdout.`, { label: 'cost' })
 const report = await io(`Run \`${T('report')} ${slug}\` and return its full stdout as output; then run \`${T('notify')} ${slug} run_finished\`. ok when the report exits 0.`, { label: 'report' })
 if (!report || !report.ok) throw new Error(`report failed: ${report && report.error}`)

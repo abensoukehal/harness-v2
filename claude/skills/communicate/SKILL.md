@@ -31,7 +31,7 @@ Three events reach the chat from `notify.telegram`: plan ready, run finished, ne
 
 ## End-of-run report
 ```
-<feature> — <done | done with gaps | partial>
+<feature> — <done | done with gaps | partial | nothing landed>
 
 What works now.
 <plain sentences: what he can go and try>

@@ -23,9 +23,12 @@ REASONS = {
 
 
 def status_of(state):
-    if state["phase"] != "finished" or state.get("delivered") is False:
+    """Zero done is nothing landed, whatever the reason; skipped counts against success exactly like blocked (10)."""
+    if not any(s["status"] == "done" for s in state["subtasks"]):
+        return "nothing landed"
+    if state["phase"] != "finished" or not state.get("delivered"):
         return "partial"
-    gaps = any(s["status"] in ("blocked", "skipped") for s in state["subtasks"]) or state["accepted_gaps"]
+    gaps = any(s["status"] != "done" for s in state["subtasks"]) or state["accepted_gaps"]
     return "done with gaps" if gaps else "done"
 
 
@@ -93,7 +96,7 @@ def build_report(ws, slug):
     lines += ["", "Next."]
     if asks:
         lines.append("Answer the question%s above first." % ("s" if len(asks) > 1 else ""))
-    if status == "partial":
+    if status in ("partial", "nothing landed"):
         lines.append("The branch %s was not delivered; see the frictions in state." % state["branch"])
     elif cfg["delivery"]["mode"] == "pr":
         lines.append("Open a PR from %s." % state["branch"])
