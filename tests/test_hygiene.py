@@ -86,6 +86,15 @@ class Hygiene(unittest.TestCase):
         self.assertNotIn("cost-log.md", done.stdout)
         self.assertNotIn("state.json", done.stdout)
 
+    def test_a_corpus_past_the_cap_fails_the_commit(self):
+        self.write("CLAUDE.md", "short and clean\n")
+        self.write("claude/agents/worker.md", "a" * 39000)
+        self.assertEqual(hygiene(self.harness).returncode, 0, "under the cap, nothing is said")
+        self.write("claude/skills/x/SKILL.md", "b" * 1500)
+        done = hygiene(self.harness)
+        self.assertEqual(done.returncode, 1, "40,515 characters is past the cap")
+        self.assertIn("characters, past the cap of 40000", done.stdout)
+
     def test_this_repo_is_clean(self):
         done = hygiene(ROOT)
         self.assertEqual(done.returncode, 0, done.stdout)

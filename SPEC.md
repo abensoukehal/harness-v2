@@ -396,7 +396,7 @@ Rules with no counter behind them are a wish. The whole reason for v2 is that a 
 
 - Per sub-task, `state.json` records: `tokens_in`, `tokens_out`, `attempts`, `duration_s`, `lines_added`.
 - Per run, the end report (section 13.2) totals them and breaks them down by phase and by agent role.
-- `product/cost-log.md` keeps one line per completed feature: slug, total tokens, wall time, sub-task count, blocked count. Append-only, and the only file in the product layer that is allowed to be a log.
+- `product/cost-log.md` keeps one line per completed feature: slug, total tokens, wall time, sub-task count, blocked count. Append-only. It and `product/frictions.md` (14.3) are the only files in the product layer that accumulate rows.
 - The retro compares this run against the last three. A phase whose share grew without the feature growing is a friction to name.
 - `budget.tokens_per_feature` is set from a measured run, never invented. A number below what the engine actually spends flags every run and so measures nothing.
 - The overrun is counted once per run, over the run's own total. A per-sub-task check reports a feature that came in under budget as a string of overruns.
@@ -711,7 +711,14 @@ The retro reads frictions from a run on a client's code and pushes the result to
 - A friction that cannot be generalised without naming the client is not an engine change. It goes to `product/conventions.md` in that client's workspace, which never travels.
 - `hygiene.sh` enforces it mechanically: the harness repo is scanned against the client names and stack keys known to the workspace, and a hit fails the retro's commit. Mechanical, because a model asked to check its own writing for leaks will always find the mention essential.
 
-### 14.3 Conflict resolution
+### 14.3 What may change the engine, and conflict resolution
+
+A friction is one run's evidence. One run cannot tell a defect from a coincidence, and an engine that changes on every first occurrence accumulates rules written for a run that never repeats.
+
+- `bin/friction <cause-slug> <feature>` records the cause in `product/frictions.md`: the slug, how many runs it appeared in, and which. One run counts once however many times it hit.
+- **Four causes change the engine on the first occurrence**: `false green`, `secret`, `delivery`, `guard bypassed`. Not a severity judgement, which a model would have to make and would make differently every time. A match against four words, made by a tool.
+- Everything else waits for a second, distinct run. It stays in `frictions.md` with its count, and the retro names it in `retro.md` as recorded and waiting. Nothing is lost; it is only not yet an instruction.
+- The instruction corpus has a hard cap, and `hygiene.sh` fails the retro's commit above it rather than noting it. A retro that cannot fit its fix under the cap consolidates first, which is section 14.4's rule with a number behind it.
 
 The retro agent has the context a merge algorithm lacks: it knows what it wanted to change and why. On conflict it reads the remote version, reads its own intent, and decides: the remote change already covers the need (abandon own change), or the two are compatible (combine them). Never a blind merge. Always rerun harness tests after.
 

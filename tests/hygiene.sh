@@ -71,4 +71,19 @@ PY
   scan ticket "$ticket_rx" "" "${product[@]:-}"
   scan words  "$words_rx"  -i "${product[@]:-}"
 fi
+# The instruction corpus has a hard cap (6.1): every agent loads it, so a retro that grows it past the cap is refused here,
+# not warned about. Same files the corpus test counts.
+corpus=$(python3 - "$harness" <<'PYCORPUS'
+import sys
+from pathlib import Path
+root = Path(sys.argv[1])
+files = [root / "CLAUDE.md", root / "templates" / "workspace" / "CLAUDE.md"] + sorted((root / "claude").rglob("*.md"))
+print(sum(len(p.read_text()) for p in files if p.is_file()))
+PYCORPUS
+) || { echo "cannot measure the instruction corpus under $harness" >&2; exit 2; }
+if [ "$corpus" -gt 40000 ]; then
+  printf 'corpus  %s: %s characters, past the cap of 40000\n' "$harness" "$corpus"
+  fail=1
+fi
+
 exit $fail
