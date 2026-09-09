@@ -89,6 +89,20 @@ class Workflows(unittest.TestCase):
         self.assertLess(gate, build.index("await update({ delivered: false })"))
         self.assertLess(build.index("QA and delivery skipped"), build.index("phase('QA')"))
 
+    def test_every_command_in_an_agent_prompt_carries_its_directory(self):
+        """The cwd rule is for agents too (2.2): a command in a prompt names where it runs."""
+        rooted = ("${WS}", "${TREE_DIR}", "${T(", "${FEATURE}")
+        for p in SCRIPTS:
+            for command in re.findall(r"\\`([^`]+)\\`", p.read_text()):
+                self.assertTrue(any(r in command for r in rooted), "%s: %r resolves from the working directory" % (p.name, command))
+
+    def test_comparable_reaches_the_qa_prompt(self):
+        build = (ROOT / "claude/workflows/harness-build.js").read_text()
+        qa = build[build.index("Global QA per your Method") - 400:build.index("agentType: 'qa'")]
+        self.assertIn("plan.comparable === false", qa)
+        self.assertIn("capture no screen", qa)
+        self.assertIn("${FEATURE}/design", qa)
+
     def test_pure_orchestration(self):
         for p in SCRIPTS:
             text = p.read_text()

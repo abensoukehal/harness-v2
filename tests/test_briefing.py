@@ -58,6 +58,12 @@ class Briefing(unittest.TestCase):
             self.assertIn(line, text, line)
         for absent in ["ONLY-IN-ST02", "browser", "examples", "## Behaviour contract", "Components live next to", "install:", "dev:", "abcd1234", "hunter2", "repos/svc/export.py"]:
             self.assertNotIn(absent, text, absent)
+        for line in ["## Paths, absolute; resolve none yourself",
+                     "safety net, never edited: %s" % (self.ws / "product/tests"),
+                     "decisions to append to: %s" % (self.ws / "product/features/hello/decisions.md")]:
+            self.assertIn(line, text, line)
+        self.assertEqual([l for l in text.splitlines() if " product/" in l or l.startswith(("  product/", "  repos/", "  .worktrees/"))], [],
+                         "no relative path an agent has to resolve")
         self.assertLess(text.index("## Exit criteria"), text.index("## Stack"))
         self.assertTrue(text.rstrip().endswith("Prose is refused."))
 

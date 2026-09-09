@@ -160,7 +160,9 @@ try {
     if (!base || !base.ok) throw new Error(`client baseline could not be recorded: ${base && (base.error || base.output)}`)
     log(`client baseline: ${(base.output || '').split('\n').filter(Boolean).join('; ')}`)
     const net = await spawn(
-      `Workspace root: ${WS}. Feature ${slug}. Follow your Method on ${FEATURE}. Zones come from ${WS}/product/code-map/. Return every zone with mutation_red, and a report under ten lines.`,
+      `Workspace root: ${WS}. Feature ${slug}. Every path below is absolute; use these, resolve none yourself. ` +
+      `Follow your Method on ${FEATURE}. Zones come from ${WS}/product/code-map. Write the net under ${WS}/product/tests. ` +
+      `Return every zone with mutation_red, and a report under ten lines.`,
       { agentType: 'test-writer', label: 'safety net', schema: NET, ...model('worker') })
     if (!net) { await refused('safety net', 'Safety net'); throw new Error('the runtime refused to start the test-writer twice; nothing to build on') }
     const vacuous = net.zones.filter((z) => !z.mutation_red).map((z) => z.zone)
@@ -255,7 +257,13 @@ try {
     phase('QA')
     await update({ phase: 'qa' })
     const runQA = () => agent(
-      `Workspace root: ${WS}. Feature ${slug}. Global QA per your Method: ${FEATURE}/journey.md, the safety net, every criterion in ${FEATURE}/state.json, the client suite against client_test_baseline, visual diff on design/. Return the failures.`,
+      `Workspace root: ${WS}. Feature ${slug}. Every path below is absolute; use these, resolve none yourself. ` +
+      `Global QA per your Method: the journey ${FEATURE}/journey.md, the safety net under ${WS}/product/tests, every criterion in ${FEATURE}/state.json, ` +
+      `the client suite against client_test_baseline in that state, and ` +
+      (plan.comparable === false
+        ? `no visual diff: the config declares design.comparable false, so capture no screen and report no visual failure.`
+        : `the visual diff on the screens in ${FEATURE}/design.`) +
+      ` Return the failures.`,
       { agentType: 'qa', label: 'global qa', schema: QA, ...model('qa') })
     let fixes = 0
     let qa = await runQA()

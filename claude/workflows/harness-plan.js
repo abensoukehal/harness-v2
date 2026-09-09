@@ -70,14 +70,15 @@ const parseStep = () => agent(
 
 phase('Ingestion')
 const scout = await spawn(
-  `${IO}Report on ${FEATURE}: does spec.md exist, does plan.md exist, does state.json exist, and list the files under design/.`,
+  `${IO}Report on ${FEATURE}: does ${FEATURE}/spec.md exist, does ${FEATURE}/plan.md exist, does ${FEATURE}/state.json exist, and list the files under ${FEATURE}/design.`,
   { label: 'scout', schema: SCOUT, effort: 'low' })
 if (!scout) throw new Error(RUNTIME('scout'))
 if (!scout.spec_exists) throw new Error(`${FEATURE}/spec.md is missing: run ${T('new')} ${slug} and fill it in`)
 if (scout.plan_exists) log(`plan.md exists for ${slug}: planning reruns and rewrites it`)
 
 const ingestion = await spawn(
-  `Workspace root: ${WS}. Feature ${slug}. Run the Ingestion part of your Method on ${FEATURE}/spec.md and ${FEATURE}/design/ (${scout.design_files.length} files). ` +
+  `Workspace root: ${WS}. Feature ${slug}. Every path below is absolute; use these, resolve none yourself. ` +
+  `Run the Ingestion part of your Method on ${FEATURE}/spec.md and ${FEATURE}/design (${scout.design_files.length} files). ` +
   `Write ${WS}/product/code-map/ and ${WS}/product/conventions.md. Return the stacks, the zones and a summary under 300 characters.`,
   { agentType: 'planner', label: 'ingest', schema: INGESTION })
 if (!ingestion) throw new Error(RUNTIME('ingest'))
@@ -85,7 +86,8 @@ log(`ingested ${ingestion.zones.length} zones across ${ingestion.stacks.join(', 
 
 phase('Planning')
 const planning = await spawn(
-  `Workspace root: ${WS}. Feature ${slug}. Ingestion found stacks ${ingestion.stacks.join(', ')} and zones ${ingestion.zones.join(', ')}. ${ingestion.summary}\n` +
+  `Workspace root: ${WS}. Feature ${slug}. Every path below is absolute; use these, resolve none yourself. ` +
+  `Ingestion found stacks ${ingestion.stacks.join(', ')} and zones ${ingestion.zones.join(', ')}. ${ingestion.summary}\n` +
   `Run the Planning part of your Method. Write ${FEATURE}/plan.md in the exact layout, ${FEATURE}/spec-gaps.md and ${FEATURE}/journey.md. ` +
   'Return kind, the counts, and the plan-ready message in the communicate skill shape as "message".',
   { agentType: 'planner', label: 'plan', schema: PLANNING })

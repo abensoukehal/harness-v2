@@ -8,7 +8,7 @@ from .plan import role_of
 DEFAULT_CAP = 12000
 RULES = [
     "No new file, abstraction layer or dependency without a one-line justification in the report.",
-    "Never edit product/tests/. Never start or stop a stack: return restart instead.",
+    "Never edit the safety net. Never start or stop a stack: return restart instead.",
     "Grep for the symbol, read about 50 lines around it. Whole file only under 150 lines.",
     "Return the structured result. Prose is refused.",
 ]
@@ -96,6 +96,11 @@ def assemble(ws, slug, subtask_id):
         out.append("dev url: " + expand(stack["dev_url"]))
     out.append("ports: " + " ".join("PORT_%s=%d" % (n.upper(), p) for n, p in sorted(ports.items())))
     out.append("log: %s" % (ws / ".run" / slug / (name + ".log")))
+    folder = ws / "product" / "features" / slug
+    out += ["", "## Paths, absolute; resolve none yourself",
+            "safety net, never edited: %s" % (ws / "product" / "tests"),
+            "decisions to append to: %s" % (folder / "decisions.md"),
+            "conventions and code map: %s   %s" % (ws / "product" / "conventions.md", ws / "product" / "code-map")]
 
     out += ["", "## Conventions"]
     path = ws / "product" / "conventions.md"

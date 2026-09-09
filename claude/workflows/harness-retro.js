@@ -72,9 +72,11 @@ log(`retro: ${retro.edits.length} files edited, ${retro.dropped.length} friction
 
 phase('Check')
 const check = await spawn(
-  `In ${TREE_DIR}, change nothing. Run \`tests/hygiene.sh --workspace ${WS}\` and \`npm test\`: tests_green when both exit 0. ` +
-  `clean = \`git status --porcelain\` prints nothing. tag_exists = \`git tag -l retro/${slug}\` prints the tag. report_exists = ${FEATURE}/report.md exists. ` +
-  `harness_at_pin = \`git -C ${WS}/harness rev-parse HEAD\` equals the content of ${WS}/product/harness.pin. detail = the failing lines, ten at most.`,
+  `Change nothing anywhere. Every command below carries the directory it runs in; run them exactly as written, from wherever you are. ` +
+  `tests_green when \`${TREE_DIR}/tests/hygiene.sh --harness ${TREE_DIR} --workspace ${WS}\` and \`npm --prefix ${TREE_DIR} test\` both exit 0. ` +
+  `clean = \`git -C ${TREE_DIR} status --porcelain\` prints nothing. tag_exists = \`git -C ${TREE_DIR} tag -l retro/${slug}\` prints the tag. ` +
+  `report_exists = \`test -f ${FEATURE}/report.md\` exits 0. ` +
+  `harness_at_pin = \`git -C ${WS}/harness rev-parse HEAD\` equals \`cat ${WS}/product/harness.pin\`. detail = the failing lines, ten at most.`,
   { label: 'verify', schema: CHECK, effort: 'low' })
 await spawn(`Run \`${T('cost')} ${slug}\`. Return ok by exit code.`, { label: 'cost', schema: TREE, effort: 'low' })
 const ok = Boolean(check && check.clean && check.tests_green && check.report_exists && check.harness_at_pin && (check.tag_exists || retro.unpushed))
