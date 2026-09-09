@@ -32,6 +32,11 @@ def status_of(state):
     return "done with gaps" if gaps else "done"
 
 
+def relative(line, ws):
+    """A path into this workspace is written from its root: an absolute one means nothing on a phone (13.2)."""
+    return line.replace(str(ws) + "/", "").replace(str(ws), ".")
+
+
 def cost_rows(text):
     rows = []
     for line in text.splitlines()[1:]:
@@ -64,12 +69,12 @@ def build_report(ws, slug):
         lines.append("Nothing." if done else "Nothing was planned.")
     for s in asks:
         # The report points at the feature folder once, at the end; the parked ask keeps its question and options only.
-        body = [l for l in render(s["ask"]).rstrip().splitlines() if not l.startswith(("Still running:", "Detail:"))]
+        body = [relative(l, ws) for l in render(s["ask"]).rstrip().splitlines() if not l.startswith(("Still running:", "Detail:"))]
         lines += [""] + body
     lines += ["", "Assumptions I made."]
     gaps = folder / "spec-gaps.md"
     entries = parse_gaps(gaps.read_text()) if gaps.exists() else []
-    assumptions = ["- %s %s" % (e["question"], e["assumed"]) for e in entries]
+    assumptions = ["- " + e["assumed"] for e in entries]  # one plain line each; the reasoning stays in spec-gaps.md (13.2)
     if state["kind"] != "service" and cfg.get("design", {}).get("comparable", True) is False:
         assumptions.append("- The design cannot be compared pixel for pixel, as the config declares, so no visual check ran.")
     lines += assumptions or ["None recorded."]

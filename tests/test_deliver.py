@@ -90,3 +90,18 @@ class Deliver(unittest.TestCase):
                 state["subtasks"][1].pop("reason", None)
             save_state(self.ws, "hello", state)
             self.assertTrue(run("report", "hello", ws=self.ws).stdout.startswith("hello — %s\n" % expected), expected)
+
+
+class Frictions(unittest.TestCase):
+    """A friction records the error that caused it (6.2), never only that something was refused."""
+
+    def test_every_friction_a_tool_writes_names_its_cause(self):
+        import re
+        from harness import baseline, deliver, notify
+        sources = [Path(m.__file__).read_text() for m in (baseline, deliver, notify)]
+        written = [m for s in sources for m in re.findall(r'frictions"\]\.append\(([^\n]+)', s)]
+        self.assertGreaterEqual(len(written), 4)
+        for line in written:
+            self.assertIn("·", line, line)
+            self.assertTrue("%" in line or "join(" in line or ".format(" in line,
+                            "a friction states what happened, never a bare label: %s" % line)

@@ -5,7 +5,7 @@ import urllib.request
 
 from .ask import render
 from .config import feature_dir, load_config, load_state, save_state
-from .report import build_report
+from .report import build_report, relative
 
 EVENTS = ("plan_ready", "run_finished", "needs_answer")
 
@@ -15,9 +15,9 @@ def message_for(ws, slug, event, state):
         report = feature_dir(ws, slug) / "report.md"
         return report.read_text() if report.exists() else build_report(ws, slug)
     if event == "plan_ready":
-        return state.get("plan_message") or "Plan ready for %s: product/features/%s/plan.md" % (slug, slug)
+        return relative(state.get("plan_message") or "Plan ready for %s: product/features/%s/plan.md" % (slug, slug), ws)
     asks = [s["ask"] for s in state["subtasks"] if s.get("ask")]
-    return "\n".join(render(a) for a in asks) if asks else "No question is pending for %s." % slug
+    return relative("\n".join(render(a) for a in asks), ws) if asks else "No question is pending for %s." % slug
 
 
 def notify(ws, slug, event, out):

@@ -8,7 +8,7 @@ description: The message shape, the ask format, the pushed events and the end-of
 Write every message for someone who was not watching. Feature vocabulary. Above the `Detail:` line: no file name, function name, stack trace, internal name or reasoning trail. Always say what is still running. Readable from a phone in ten seconds.
 
 ## Message
-The ask is an object; `harness/bin/ask <slug> <sub-task>` renders it. Fields: `where` (one sentence), `stuck` (two or three plain sentences), `tried` (at most two lines), `question` (closed), `options` (two or three, lettered A B C, exactly one `recommended`), `still_running`, `detail` (one path). No path and no file name outside `detail`. Rendered:
+The ask is an object; `harness/bin/ask <slug> <sub-task>` renders it. Fields: `where` (one sentence), `stuck` (two or three plain sentences), `tried` (at most two lines), `question` (closed), `options` (two or three, lettered A B C, exactly one `recommended`), `still_running`, `detail` (one path, written from the workspace root, never absolute). No path and no file name outside `detail`. Rendered:
 ```
 <where>
 
@@ -40,7 +40,7 @@ What didn't land.
 <blocked and skipped sub-tasks, one line each, plain words>
 
 Assumptions I made.
-<from spec-gaps.md and decisions.md, only those that shaped the result>
+<one plain line each, the decision taken; the reasoning stays in spec-gaps.md>
 
 What it cost.
 <tokens, wall time, sub-tasks, attempts, against the last three runs>

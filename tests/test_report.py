@@ -52,7 +52,7 @@ class Report(unittest.TestCase):
         self.assertTrue(text.rstrip().endswith("product/features/hello/gaps/"))
         for line in ["- Orders export as CSV", "- The export button shows on the orders screen: its checks stayed red after three attempts",
                      "- Done exports are struck through: waits on the export button shows on the orders screen",
-                     "- Each row carries a summary: it needs an answer, below", "A. Comma separated (recommended)", "- Which format wins? comma, the common case.", "- Empty export? a header row and nothing else.",
+                     "- Each row carries a summary: it needs an answer, below", "A. Comma separated (recommended)", "- comma, the common case.", "- a header row and nothing else.",
                      "150 tokens, 300 s wall time, 4 sub-tasks, 5 attempts, 2 blocked.", "No three earlier runs to compare against.",
                      "Answer the question above first.", "Open a PR from feature/hello."]:
             self.assertIn(line, text, line)
@@ -93,6 +93,35 @@ class Report(unittest.TestCase):
         state["kind"] = "mixed"
         save_state(self.ws, "hello", state)
         self.assertIn("- The design cannot be compared pixel for pixel, as the config declares, so no visual check ran.", run("report", "hello", ws=self.ws).stdout)
+
+    def test_an_assumption_carrying_code_or_a_path_is_refused(self):
+        gaps = self.ws / "product/features/hello/spec-gaps.md"
+        good = gaps.read_text()
+        for assumed, problem in [("`archived=1` only", "which is code or a path"),
+                                 ("the class lives in public/style.css", "which is code or a path"),
+                                 ("a button whose text swaps " + "x" * 160, "past 160")]:
+            gaps.write_text("# gaps\n\n## Which format wins?\nAssumed: %s\nAffects: st-01\n" % assumed)
+            done = run("report", "hello", ws=self.ws)
+            self.assertEqual(done.returncode, 1, assumed)
+            self.assertIn("'Assumed:' is one plain line", done.stderr)
+            self.assertIn(problem, done.stderr, assumed)
+            self.assertIn("Put the reasoning in the lines below it", done.stderr)
+        gaps.write_text("# gaps\n\n## Which format wins?\nAssumed: commas, the common case.\nAffects: st-01\nThe spec named neither; both readers accept commas.\n")
+        text = run("report", "hello", ws=self.ws).stdout
+        self.assertIn("- commas, the common case.", text)
+        self.assertNotIn("both readers accept", text, "the reasoning stays in the gaps file")
+        gaps.write_text(good)
+
+    def test_a_detail_path_is_written_from_the_workspace_root(self):
+        state = load_state(self.ws, "hello")
+        ask = dict(ASK, detail=str(self.ws / "product/features/hello"))
+        state["subtasks"][3]["ask"] = ask
+        save_state(self.ws, "hello", state)
+        text = run("report", "hello", ws=self.ws).stdout
+        self.assertNotIn(str(self.ws), text, "no absolute path anywhere in the report")
+        self.assertTrue(text.rstrip().endswith("product/features/hello/gaps/"))
+        notified = run("ask", "hello", "st-04", ws=self.ws)
+        self.assertEqual(notified.returncode, 0, notified.stderr)
 
     def test_partial_when_not_delivered_and_median_after_three_runs(self):
         state = load_state(self.ws, "hello")
