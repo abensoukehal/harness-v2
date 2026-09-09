@@ -23,10 +23,11 @@ planner, test-writer, worker, reviewer, qa, retro. Skills: criteria-runner, visu
 - Every answered gap carries `Pinned:`, a sub-task and one of its criteria; `bin/plan` refuses an answer that resolves to no criterion in `plan.md`.
 - The scrubber redacts a value of at least 8 characters, on a token boundary; a shorter secret fails setup by key instead of being substituted.
 - `client_tests.<stack>` and `stacks.<stack>.commands.test` are one command, and the cross-field pass refuses a config where they differ.
-- `budget.tokens_per_feature` comes from a measured run; the overrun is counted once, over the run's own total.
+- The budget is `budget.tokens_per_feature` plus `budget.tokens_per_subtask` per sub-task in the plan, both measured; the overrun is counted once, over the run's own total.
 - The plan-ready message is rendered from the parsed plan by `bin/review`, with a Mermaid graph beside it; no agent writes it.
 - A sub-task carries at most five criteria, one stack, and dependencies declared by id; the parse refuses a cycle.
-- The retro changes the engine on a first friction only for four causes; `bin/friction` records the rest in `product/frictions.md` until a second run.
+- The retro changes the engine on a first friction only for four causes, declared to `bin/friction` as a category rather than spelled out of the cause slug; the rest sit in `product/frictions.md` until a second run.
+- A guard's test drives an input that reaches the refused branch; a guard no input can reach is made reachable or removed.
 - `hygiene.sh` fails a commit that puts the instruction corpus past 40,000 characters.
 - `harness/` in a workspace runs the pinned commit only; the retro never moves it.
 

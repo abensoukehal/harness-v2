@@ -112,18 +112,24 @@ class Report(unittest.TestCase):
         self.assertNotIn("both readers accept", text, "the reasoning stays in the gaps file")
         gaps.write_text(good)
 
-    def test_the_overrun_is_counted_once_over_the_run_and_never_per_subtask(self):
+    def plan_of(self, n, tokens_each):
         state = load_state(self.ws, "hello")
-        many = [st("st-%02d" % i, "api", "svc", status="done", attempts=1, commit="a" * 40, goal="Step %d" % i,
-                   cost=dict(COST, tokens_in=9000, tokens_out=1000)) for i in range(1, 11)]
-        state["subtasks"] = many  # ten sub-tasks, 100,000 tokens: the budget exactly, so the run is not over it
+        state["subtasks"] = [st("st-%02d" % i, "api", "svc", status="done", attempts=1, commit="a" * 40, goal="Step %d" % i,
+                                cost=dict(COST, tokens_in=tokens_each - 1000, tokens_out=1000)) for i in range(1, n + 1)]
         save_state(self.ws, "hello", state)
-        self.assertNotIn("Over the feature budget", run("report", "hello", ws=self.ws).stdout)
-        state["subtasks"] = many + [st("st-11", "api", "svc", status="done", attempts=1, commit="a" * 40, goal="Step 11",
-                                       cost=dict(COST, tokens_in=9000, tokens_out=1000))]
-        save_state(self.ws, "hello", state)
-        text = run("report", "hello", ws=self.ws).stdout
-        self.assertEqual(text.count("Over the feature budget"), 1, "one run, one overrun line")
+        return run("report", "hello", ws=self.ws).stdout
+
+    def test_the_overrun_is_counted_once_over_the_run_and_never_per_subtask(self):
+        # The config budgets 40,000 per run plus 6,000 per sub-task: ten sub-tasks at 10,000 each is the budget exactly.
+        self.assertNotIn("Over the budget", self.plan_of(10, 10000))
+        self.assertEqual(self.plan_of(11, 10000).count("Over the budget"), 1, "one run, one overrun line")
+
+    def test_the_budget_follows_the_plan_and_not_the_run_it_was_measured_on(self):
+        # A two-sub-task run at budget costs 52,000, so its whole-run rate is 26,000 a sub-task. Held against that run's
+        # total, a fifteen-sub-task plan spending the same per sub-task passes; held against the plan, it does not.
+        self.assertNotIn("Over the budget", self.plan_of(2, 26000))
+        text = self.plan_of(15, 26000)
+        self.assertIn("Over the budget of 130000 tokens for 15 sub-tasks", text)
 
     def test_a_detail_path_is_written_from_the_workspace_root(self):
         state = load_state(self.ws, "hello")

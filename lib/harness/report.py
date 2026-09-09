@@ -96,8 +96,11 @@ def build_report(ws, slug):
         lines.append("Last three runs: median %d tokens, %d s wall time." % (statistics.median(r["tokens"] for r in earlier), statistics.median(r["wall"] for r in earlier)))
     else:
         lines.append("No three earlier runs to compare against.")
-    if tokens > cfg["budget"]["tokens_per_feature"]:
-        lines.append("Over the feature budget of %d tokens: a harness defect to look at in the retro." % cfg["budget"]["tokens_per_feature"])
+    # The budget follows the plan: a fixed cost per run plus a rate per sub-task (6.2). A flat number taken from the
+    # last run passes every plan larger than that one and so measures nothing.
+    budget = cfg["budget"]["tokens_per_feature"] + cfg["budget"]["tokens_per_subtask"] * len(state["subtasks"])
+    if tokens > budget:
+        lines.append("Over the budget of %d tokens for %d sub-tasks: a harness defect to look at in the retro." % (budget, len(state["subtasks"])))
     lines += ["", "Next."]
     if asks:
         lines.append("Answer the question%s above first." % ("s" if len(asks) > 1 else ""))

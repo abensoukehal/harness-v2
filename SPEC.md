@@ -164,7 +164,8 @@ Validation runs in two passes: schema first, then cross-field checks (paths unde
 
 
 budget:
-  tokens_per_feature: 12000000  # measured from a run, not guessed; overrun is a harness defect, not a stop
+  tokens_per_feature: 10300000  # measured, not guessed: what a run costs before its sub-tasks
+  tokens_per_subtask: 1450000   # measured; budget is the pair against the plan's count, overrun is a harness defect, not a stop
 
 qa:
   max_fixes: 10                 # phase cap; past it, deliver with documented gaps
@@ -398,7 +399,7 @@ Rules with no counter behind them are a wish. The whole reason for v2 is that a 
 - Per run, the end report (section 13.2) totals them and breaks them down by phase and by agent role.
 - `product/cost-log.md` keeps one line per completed feature: slug, total tokens, wall time, sub-task count, blocked count. Append-only. It and `product/frictions.md` (14.3) are the only files in the product layer that accumulate rows.
 - The retro compares this run against the last three. A phase whose share grew without the feature growing is a friction to name.
-- `budget.tokens_per_feature` is set from a measured run, never invented. A number below what the engine actually spends flags every run and so measures nothing.
+- **The budget follows the plan, not the last run.** `budget.tokens_per_feature` is what a run costs before any sub-task work — planning, the safety net, QA, delivery — and `budget.tokens_per_subtask` is the rate per sub-task in the plan. The budget for a run is the first plus the second times the plan's sub-task count. Both are set from a measured run, never invented: a flat number taken from a two-sub-task run passes every larger plan, and a number below what the engine actually spends flags every run. Either way the flag measures nothing.
 - The overrun is counted once per run, over the run's own total. A per-sub-task check reports a feature that came in under budget as a string of overruns.
 - A run that exceeds `budget.tokens_per_feature` from the config does not stop. It flags the overrun in the report and the retro treats it as a defect in the harness, not in the feature.
 
@@ -715,7 +716,8 @@ The retro reads frictions from a run on a client's code and pushes the result to
 
 A friction is one run's evidence. One run cannot tell a defect from a coincidence, and an engine that changes on every first occurrence accumulates rules written for a run that never repeats.
 
-- `bin/friction <cause-slug> <feature>` records the cause in `product/frictions.md`: the slug, how many runs it appeared in, and which. One run counts once however many times it hit.
+- `bin/friction <cause-slug> <feature> [<category>]` records the cause in `product/frictions.md`: the slug, how many runs it appeared in, and which. One run counts once however many times it hit.
+- **The category is declared, not read out of the slug.** The retro passes one of the four words or nothing. A rule that spells the category out of a name the retro invented makes safety depend on that name: `secrets-directory-listed` does not contain `secret` as a word, and the leak then waits for a second run. The declared word wins where the two disagree, and a slug that names one of the four still counts when nothing is declared: a wrongly immediate fix costs one early edit, a wrongly deferred one ships the defect.
 - **Four causes change the engine on the first occurrence**: `false green`, `secret`, `delivery`, `guard bypassed`. Not a severity judgement, which a model would have to make and would make differently every time. A match against four words, made by a tool.
 - Everything else waits for a second, distinct run. It stays in `frictions.md` with its count, and the retro names it in `retro.md` as recorded and waiting. Nothing is lost; it is only not yet an instruction.
 - The instruction corpus has a hard cap, and `hygiene.sh` fails the retro's commit above it rather than noting it. A retro that cannot fit its fix under the cap consolidates first, which is section 14.4's rule with a number behind it.
@@ -749,6 +751,12 @@ The retro edits the engine with no human review, and its own tests only cover me
 ### 14.6 Harness tests
 
 The harness has its own test suite: schema validation for config and state, the commit allowlist, the commit message filter, port allocation and cleanup, briefing assembly, the criteria runner for each kind. The retro runs it before every push.
+
+### 14.7 A test forces the condition it covers
+
+Every guard the retro adds or repairs carries a test that drives an input reaching the refused branch, and asserts what the guard does with it. A test asserting that the fix is present passes on the defect as well: the retro's own overrun test asserted the friction line named `line_budget`, which held whether the count was per run or per sub-task, and the same defect shipped twice.
+
+The same question applies to guards nobody is changing: what input reaches this branch, and does a test drive that input? A guard whose condition no input can produce passes its test, reads as coverage, and protects nothing. The plan parse refused a dependency cycle while requiring every dependency to name an earlier sub-task, so no plan could ever hold one. Where the answer is that no input can reach it, the guard is either made reachable or removed; a refusal that cannot fire is not a safety rule.
 
 ## 15. Claude Code implementation mapping
 

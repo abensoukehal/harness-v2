@@ -24,11 +24,20 @@ def names(cause, word):
     return any(tokens[i:i + len(wanted)] == wanted for i in range(len(tokens)))
 
 
-def eligible(cause, runs):
+def check_category(category):
+    """The category is declared, never spelled out of a slug the retro invented (14.3)."""
+    if category and category not in FIRST_TIME:
+        raise HarnessError("a category is one of %s, or nothing: %r" % (", ".join(FIRST_TIME), category))
+    return category
+
+
+def eligible(cause, runs, category=None):
     """Whether the retro may change the engine for this cause now, and the sentence saying why."""
-    for word in FIRST_TIME:
-        if names(cause, word):
-            return True, "the cause names %r, which the engine changes for on the first occurrence" % word.replace("-", " ")
+    # Declared wins over the slug. A wrongly immediate fix costs one early edit; a wrongly deferred one ships the defect,
+    # so a slug that names one of the four still counts when nothing is declared.
+    word = category or next((w for w in FIRST_TIME if names(cause, w)), None)
+    if word:
+        return True, "the cause is %r, which the engine changes for on the first occurrence" % word.replace("-", " ")
     if len(runs) > 1:
         return True, "seen in %d runs: %s" % (len(runs), ", ".join(runs))
     return False, ("seen in one run only, and the cause names none of: %s. It waits for a second run."
@@ -48,9 +57,10 @@ def render(rows):
     return "\n".join([HEADER] + ["%s | %d | %s" % (r["cause"], len(r["runs"]), ", ".join(r["runs"])) for r in rows]) + "\n"
 
 
-def record(ws, cause, run):
+def record(ws, cause, run, category=None):
     """Append or increment the cause in product/frictions.md and answer whether the engine may change for it."""
     check_cause(cause)
+    check_category(category)
     path = ws / "product" / "frictions.md"
     rows = parse(path.read_text()) if path.exists() else []
     row = next((r for r in rows if r["cause"] == cause), None)
@@ -60,5 +70,5 @@ def record(ws, cause, run):
     if run not in row["runs"]:  # one run counts once, however many times it hit the same cause
         row["runs"].append(run)
     path.write_text(render(rows))
-    ok, why = eligible(cause, row["runs"])
-    return {"cause": cause, "count": len(row["runs"]), "runs": row["runs"], "eligible": ok, "why": why}
+    ok, why = eligible(cause, row["runs"], category)
+    return {"cause": cause, "category": category, "count": len(row["runs"]), "runs": row["runs"], "eligible": ok, "why": why}

@@ -78,8 +78,11 @@ browser_runner:
   frontend: pnpm playwright test
 
 budget:
-  # measured, not guessed: the archive-items run (run 3) spent 11.8M tokens across plan and build
-  tokens_per_feature: 12000000
+  # measured, not guessed, from the archive-items run (run 3): 13.2M tokens across plan and build,
+  # of which 2.9M was attributed to its two sub-tasks. The budget for a run is the first number plus
+  # the second per sub-task in the plan, so a fifteen-sub-task feature is not held to a two-sub-task run.
+  tokens_per_feature: 10300000
+  tokens_per_subtask: 1450000
 
 qa:
   max_fixes: 10

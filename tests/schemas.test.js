@@ -69,6 +69,7 @@ rejects("config", "two-stack/client.config.yaml", [
   ["test_runner key not a stack", (c) => (c.test_runner.mobile = "x"), /^\/test_runner\/mobile$/],
   ["missing test_runner", (c) => delete c.test_runner, /^\/test_runner$/],
   ["tokens_per_feature 0", (c) => (c.budget.tokens_per_feature = 0), /^\/budget\/tokens_per_feature$/],
+  ["no tokens_per_subtask", (c) => delete c.budget.tokens_per_subtask, /^\/budget\/tokens_per_subtask$/],
   ["max_fixes negative", (c) => (c.qa.max_fixes = -1), /^\/qa\/max_fixes$/],
   ["viewport malformed", (c) => (c.visual.viewport = "1440"), /^\/visual\/viewport$/],
   ["threshold_pct over 100", (c) => (c.visual.threshold_pct = 150), /^\/visual\/threshold_pct$/],

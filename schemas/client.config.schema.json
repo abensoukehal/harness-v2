@@ -146,10 +146,15 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "tokens_per_feature"
+        "tokens_per_feature",
+        "tokens_per_subtask"
       ],
       "properties": {
         "tokens_per_feature": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "tokens_per_subtask": {
           "type": "integer",
           "minimum": 1
         },

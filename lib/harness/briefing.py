@@ -65,7 +65,7 @@ def assemble(ws, slug, subtask_id):
     ports = state["ports"]
     expand = lambda text: re.sub(r"\$\{PORT_(\w+)\}", lambda m: str(ports.get(m.group(1).lower(), m.group(0))), text)
     dependents = [s["id"] for s in state["subtasks"] if subtask_id in s.get("depends_on", [])]
-    tokens = st.get("token_budget") or max(1, cfg["budget"]["tokens_per_feature"] // max(1, len(state["subtasks"])))
+    tokens = st.get("token_budget") or cfg["budget"]["tokens_per_subtask"]
 
     out = ["# Mission %s · %s" % (st["id"], st.get("goal", "")),
            "feature: %s   branch: %s" % (slug, state["branch"]),

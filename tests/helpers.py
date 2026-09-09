@@ -54,7 +54,8 @@ TAIL = textwrap.dedent("""
     test_runner:
       %s
     budget:
-      tokens_per_feature: 100000
+      tokens_per_feature: 40000
+      tokens_per_subtask: 6000
     qa:
       max_fixes: 3
     visual:

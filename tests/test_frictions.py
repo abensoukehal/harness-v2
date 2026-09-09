@@ -13,8 +13,8 @@ class Frictions(unittest.TestCase):
         self.ws = env_workspace(Path(self.tmp.name))
         self.ledger = self.ws / "product/frictions.md"
 
-    def friction(self, cause, feature):
-        done = run("friction", cause, feature, ws=self.ws)
+    def friction(self, cause, feature, *category):
+        done = run("friction", cause, feature, *category, ws=self.ws)
         self.assertEqual(done.returncode, 0, done.stderr)
         return json.loads(done.stdout)
 
@@ -39,6 +39,15 @@ class Frictions(unittest.TestCase):
             self.assertIn(word, out["why"])
         # A word inside a longer one names nothing: this waits like anything else.
         self.assertFalse(self.friction("secrets-directory-listed", "hello")["eligible"])
+
+    def test_a_declared_category_moves_the_engine_whatever_the_slug_says(self):
+        # The slug names none of the four words, so on its spelling alone this would wait for a second run.
+        out = self.friction("the-log-carried-a-token", "hello", "secret")
+        self.assertEqual((out["count"], out["eligible"], out["category"]), (1, True, "secret"))
+        self.assertIn("the cause is 'secret'", out["why"])
+        bad = run("friction", "the-log-carried-a-token", "hello", "urgent", ws=self.ws)
+        self.assertEqual(bad.returncode, 1)
+        self.assertIn("a category is one of false-green, secret, delivery, guard-bypassed", bad.stderr)
 
     def test_the_ledger_keeps_one_row_per_cause_and_a_header(self):
         self.friction("one-cause", "hello")

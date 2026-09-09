@@ -63,6 +63,7 @@ test_runner:
 
 budget:
   tokens_per_feature: 1500000
+  tokens_per_subtask: 150000
 
 qa:
   max_fixes: 6

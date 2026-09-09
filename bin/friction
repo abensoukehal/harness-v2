@@ -10,9 +10,9 @@ from harness.frictions import record
 
 
 def run(argv):
-    if len(argv) != 2:
-        raise HarnessError("usage: friction <cause-slug> <feature-slug>")
-    print(json.dumps(record(find_workspace(), argv[0], check_slug(argv[1])), indent=2))
+    if len(argv) not in (2, 3):
+        raise HarnessError("usage: friction <cause-slug> <feature-slug> [<category>]")
+    print(json.dumps(record(find_workspace(), argv[0], check_slug(argv[1]), argv[2] if len(argv) == 3 else None), indent=2))
 
 
 main(run)
