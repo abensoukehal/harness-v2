@@ -61,7 +61,7 @@
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["role", "run", "tokens_in", "tokens_out", "duration_s"],
+        "required": ["role", "tokens_in", "tokens_out", "duration_s"],
         "properties": {
           "role": { "type": "string", "minLength": 1 },
           "run": { "type": "string", "minLength": 1 },

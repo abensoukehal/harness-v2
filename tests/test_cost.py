@@ -72,4 +72,8 @@ class Cost(unittest.TestCase):
             state = load_state(ws, "hello")
             self.assertEqual(state["wall_time_s"], 190 + 70, "each run's own span, never the idle time between them")
             self.assertEqual({a["run"] for a in state["cost_by_agent"].values()}, {"wf_1", "wf_2"})
+            # State written by an earlier engine carries no run; it stays readable and counts once.
+            state["cost_by_agent"]["old1"] = {"role": "worker", "tokens_in": 5, "tokens_out": 1, "duration_s": 2}
+            save_state(ws, "hello", state)
+            self.assertEqual(run("cost", "hello", "--transcripts", wf, ws=ws).returncode, 0)
             self.assertIn("total: 6 agents over 2 runs,", done.stdout)

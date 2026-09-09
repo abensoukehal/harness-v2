@@ -59,6 +59,7 @@ def record(path, slug, ws):
             end = stamp
     if first is None or not re.search(r"%s(?![\w-])" % re.escape(str(ws)), first) or not re.search(r"(?<![a-z0-9-])%s(?![a-z0-9-])" % re.escape(slug), first):
         return None
+    # run: which workflow launch this agent belonged to, so a second run of the same feature keeps its own span (6.2).
     out = {"role": role, "run": path.parent.name, "tokens_in": tokens_in, "tokens_out": tokens_out, "turns": turns,
            "duration_s": int(seconds(end) - seconds(start)) if start and end else 0}
     m = re.search(r"\bst-[0-9]{2,}\b", first[:400])
