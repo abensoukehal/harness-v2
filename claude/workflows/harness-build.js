@@ -232,7 +232,7 @@ try {
     await update({
       subtasks: [item],
       decisions: [...tag(worker && worker.decisions), ...tag(review && review.decisions)],
-      frictions: [...tag(worker && worker.frictions), ...tag(review && review.frictions), ...(review && review.justification ? [`${id} · over line budget · ${review.justification}`] : [])],
+      frictions: [...tag(worker && worker.frictions), ...tag(review && review.frictions), ...(review && review.justification && lines_added > (byId()[id].line_budget ?? Infinity) ? [`${id} · over line budget · ${review.justification}`] : [])],
     }, 'Build')
     if (outcome.status === 'blocked') summary.blocked.push(`${id}: ${outcome.reason}`)
     if (outcome.status === 'skipped') summary.skipped.push(`${id}: ${outcome.reason}`)

@@ -50,7 +50,7 @@ class Briefing(unittest.TestCase):
         text = assemble(self.ws, "hello", "st-01")
         for line in ["# Mission st-01 · Orders export as CSV", "feature: hello   branch: feature/hello", "stack: api (backend)",
                      "work in: %s" % (self.ws / ".worktrees/hello/svc"), "  %s" % (self.ws / ".worktrees/hello/svc/export.py"), "  %s" % (self.ws / ".worktrees/hello/svc/lib/csv.py"),
-                     "depends on this: st-02, st-03", "line budget: 60      token budget: 33333",
+                     "sub-tasks waiting for this one: st-02, st-03", "line budget: 60      token budget: 33333",
                      "## Exit criteria", "- http GET http://127.0.0.1:50100/export 200, rows = 3", '- log api present "export requested"', "- lint",
                      "## Stack", "test runner: pytest", "ports: PORT_API=50100 PORT_DB=50102 PORT_WEB=50101",
                      "log: %s" % (self.ws / ".run/hello/api.log"), "## Conventions", "### all", "Errors bubble up", "### api", "Handlers return plain dicts",

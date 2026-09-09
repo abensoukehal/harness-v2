@@ -19,6 +19,7 @@ planner, test-writer, worker, reviewer, qa, retro. Skills: criteria-runner, visu
 - Schemas handed to `agent()` are inline, in the dialect the runtime accepts: no `$schema`, `$ref` or conditionals. The files under `schemas/` stay the full contract and `bin/validate` and `bin/state` enforce them.
 - Model and effort per role are config (`agents:` in `client.config.yaml`), static per workspace, passed to every spawn in all three workflows; `bin/agents` resolves them.
 - Cost comes from the runtime transcripts: input tokens per agent, counted only for agents whose first message names both the feature and the workspace path, with the model and effort that spent them.
+- A relaunch still inside the safety net rebuilds and refreezes it; the net check refuses an unfrozen net only past that phase.
 - `harness/` in a workspace runs the pinned commit only; the retro never moves it.
 
 ## Known limits

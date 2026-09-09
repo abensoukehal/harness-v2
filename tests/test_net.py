@@ -39,3 +39,11 @@ class SafetyNet(unittest.TestCase):
         done = run("net", "check", "hello", ws=self.ws)
         self.assertEqual(done.returncode, 1)
         self.assertIn("safety net is not frozen", done.stderr)
+
+    def test_unfrozen_net_inside_the_safety_net_phase_is_allowed(self):
+        state = load_state(self.ws, "hello")
+        state["subtasks"] = [SUBTASK]
+        state["phase"] = "safety_net"
+        save_state(self.ws, "hello", state)
+        again = run("net", "check", "hello", ws=self.ws)
+        self.assertEqual(again.returncode, 0, again.stderr)

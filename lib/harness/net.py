@@ -24,11 +24,12 @@ def freeze(ws, slug):
 
 
 def check(ws, slug):
-    """Refuse when product/tests differs from the frozen net, or when nothing was frozen and sub-tasks exist."""
+    """Refuse when product/tests differs from the frozen net, or when a run past the safety net has none frozen."""
     state = load_state(ws, slug)
     sha = state.get("net_commit")
     if not sha:
-        if state["subtasks"]:
+        # A relaunch still in the safety net writes and freezes the net in that phase; refusing it strands the run.
+        if state["subtasks"] and state["phase"] != "safety_net":
             raise HarnessError("safety net is not frozen: no net_commit in state for %s; run harness/bin/net freeze %s at the end of phase 3" % (slug, slug))
         return None
     product = ws / "product"

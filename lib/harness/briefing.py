@@ -76,7 +76,7 @@ def assemble(ws, slug, subtask_id):
     out += ["  " + str(ws / worktree_path(f, slug, cfg)) for f in st.get("files", [])]
     if st.get("answer"):
         out.append("answer from Ali to your question: %s. %s" % (st["answer"]["letter"], st["answer"]["text"]))
-    out += ["depends on this: " + (", ".join(dependents) or "none"),
+    out += ["sub-tasks waiting for this one: " + (", ".join(dependents) or "none"),
             "line budget: %s      token budget: %d" % (st.get("line_budget", "unset"), tokens),
             "", "## Exit criteria"]
     out += ["- " + criterion_text(c, expand) for c in st["exit_criteria"]]

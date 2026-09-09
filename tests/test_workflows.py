@@ -42,6 +42,8 @@ class Workflows(unittest.TestCase):
         self.assertLess(text.index("${T('report')}"), text.index("${T('notify')} ${slug} run_finished"))
         for name in ["harness-plan", "harness-retro"]:
             self.assertIn("${T('cost')}", (ROOT / "claude/workflows" / (name + ".js")).read_text(), name)
+        over = next(l for l in text.splitlines() if "over line budget" in l)
+        self.assertIn("line_budget", over, "the over-budget friction is recorded only when the count is over the budget")
         self.assertIn("--reseed", text)
         self.assertNotIn("communicate skill", text, "the report is a tool, not an agent")
         retro = (ROOT / "claude/workflows/harness-retro.js").read_text()
