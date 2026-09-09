@@ -78,7 +78,8 @@ browser_runner:
   frontend: pnpm playwright test
 
 budget:
-  tokens_per_feature: 2000000
+  # measured, not guessed: the archive-items run (run 3) spent 11.8M tokens across plan and build
+  tokens_per_feature: 12000000
 
 qa:
   max_fixes: 10

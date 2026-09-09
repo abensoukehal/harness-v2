@@ -88,7 +88,7 @@ def parse(text, cfg, slug=None):
         fail(subtasks[0]["_line"], "missing 'kind: ui | service | mixed' before the first sub-task")
 
     comparable = cfg.get("design", {}).get("comparable", True)
-    out, seen = [], []
+    out, seen, texts = [], [], {}
     for st in subtasks:
         for key in REQUIRED:
             if key not in st:
@@ -115,6 +115,7 @@ def parse(text, cfg, slug=None):
         if not st["_criteria"]:
             fail(st["_line"], "sub-task has no criterion")
         criteria = [criterion(i, text, cfg, stack, fail, comparable) for i, text in st["_criteria"]]
+        texts[st["id"]] = [text for _, text in st["_criteria"]]  # what a gap's 'Pinned:' resolves against (4.2)
         out.append({"id": st["id"], "stack": stack, "goal": st["goal"], "files": files, "depends_on": deps,
                     "line_budget": int(budget), "exit_criteria": criteria, "status": "pending", "attempts": 0,
                     "interruptions": 0, "worktree": ".worktrees/%s/%s" % (slug, stacks[stack]["repo"]),
@@ -124,7 +125,7 @@ def parse(text, cfg, slug=None):
     # design.comparable: false in the config lets a screen feature skip it.
     if kind in ("ui", "mixed") and comparable and not any(c["kind"] == "visual" for s in out for c in s["exit_criteria"]):
         fail(subtasks[0]["_line"], "kind %s activates the visual diff and no sub-task carries a visual criterion; add one or declare design.comparable: false in the config" % kind)
-    return {"kind": kind, "subtasks": out, "comparable": comparable}
+    return {"kind": kind, "subtasks": out, "comparable": comparable, "criteria_text": texts}
 
 
 def criterion(i, text, cfg, stack, fail, comparable=True):

@@ -39,6 +39,9 @@ criteria:
 """
 
 
+PIN = "http GET http://127.0.0.1:${PORT_API}/export.csv 200 rows = 3"
+
+
 def plan(ws, text):
     (ws / "product/features/hello/plan.md").write_text(text)
     return run("plan", "hello", ws=ws)
@@ -121,16 +124,33 @@ class Plan(unittest.TestCase):
 
     def test_gaps_carry_the_answer_or_are_refused(self):
         gaps = self.ws / "product/features/hello/spec-gaps.md"
-        gaps.write_text("# hello\n\n## Which delimiter wins\nAssumed: comma, the common case\nAffects: st-01\n\n## Empty export\nAffects: st-01\n")
+        gaps.write_text("# hello\n\n## Which delimiter wins\nAssumed: comma, the common case\nAffects: st-01\nPinned: st-01 %s\n\n## Empty export\nAffects: st-01\nPinned: st-01 lint\n" % PIN)
         done = plan(self.ws, PLAN)
         self.assertEqual(done.returncode, 1)
         self.assertIn("spec-gaps.md entry has no 'Assumed:' line", done.stderr)
         self.assertIn("\n  ## Empty export", done.stderr)
         self.assertNotIn("Which delimiter", done.stderr)
-        gaps.write_text("# hello\n\n## Which delimiter wins\nAssumed: comma, the common case\nAffects: st-01\n")
+        gaps.write_text("# hello\n\n## Which delimiter wins\nAssumed: comma, the common case\nAffects: st-01\nPinned: st-01 %s\n" % PIN)
         done = plan(self.ws, PLAN)
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual(json.loads(done.stdout)["gaps"], [{"question": "Which delimiter wins", "assumed": "comma, the common case", "affects": "st-01"}])
+        self.assertEqual(json.loads(done.stdout)["gaps"],
+                         [{"question": "Which delimiter wins", "assumed": "comma, the common case", "affects": "st-01", "pinned": "st-01 " + PIN}])
+        self.assertNotIn("criteria_text", done.stdout, "the raw criteria resolve the gaps here and go no further")
+
+    def test_an_answer_pinned_to_no_criterion_is_refused_at_parse(self):
+        gaps = self.ws / "product/features/hello/spec-gaps.md"
+        entry = "# hello\n\n## Which delimiter wins\nAssumed: comma, the common case\nAffects: st-01\nPinned: %s\n"
+        for pin in ["st-01 http GET http://127.0.0.1:${PORT_API}/export.csv 200 rows = 4",  # a criterion the plan does not carry
+                    "st-02 lint",                                                           # a criterion of another sub-task
+                    "st-09 lint",                                                           # a sub-task that does not exist
+                    "lint"]:                                                                # no sub-task at all
+            gaps.write_text(entry % pin)
+            done = plan(self.ws, PLAN)
+            self.assertEqual(done.returncode, 1, pin)
+            self.assertIn("'Pinned:' names no criterion in plan.md", done.stderr, pin)
+            self.assertIn("\n  Pinned: %s" % pin, done.stderr, pin)
+        gaps.write_text(entry % ("st-01 " + PIN))
+        self.assertEqual(plan(self.ws, PLAN).returncode, 0)
 
     def test_a_screen_feature_without_a_visual_check_is_refused_unless_declared(self):
         config = self.ws / "product/client.config.yaml"

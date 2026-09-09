@@ -160,11 +160,11 @@ Required per stack: `commands.dev`, `health`, `health_timeout_s`. Phases 4 and 5
 
 `repo` and `path` are null together or not at all, and only for a stack the harness starts but never edits, such as a database container. A repo-less stack gets no worktree and runs from the workspace root, and a plan sub-task cannot target one. A sub-task that needs to change it is a client infrastructure change, which is not something this system delivers.
 
-Validation runs in two passes: schema first, then cross-field checks (paths under their declared repo, `depends_on` names exist and do not cycle, `${PORT_*}` references resolve, test keys are declared stacks, worktree paths match `.worktrees/<feature>/<repo>`). Cross-field checks only run once the schema pass is clean, so a badly broken file takes two rounds to fully diagnose. That is the right order, and the validator says which pass it is reporting.
+Validation runs in two passes: schema first, then cross-field checks (paths under their declared repo, `depends_on` names exist and do not cycle, `${PORT_*}` references resolve, test keys are declared stacks, `client_tests.<stack>` and `stacks.<stack>.commands.test` agree, worktree paths match `.worktrees/<feature>/<repo>`). Cross-field checks only run once the schema pass is clean, so a badly broken file takes two rounds to fully diagnose. That is the right order, and the validator says which pass it is reporting.
 
 
 budget:
-  tokens_per_feature: 2000000   # overrun is a harness defect, not a stop
+  tokens_per_feature: 12000000  # measured from a run, not guessed; overrun is a harness defect, not a stop
 
 qa:
   max_fixes: 10                 # phase cap; past it, deliver with documented gaps
@@ -257,6 +257,7 @@ The plan is the only thing a human touches, so the handoff cannot be ambiguous.
 
 In v1 a silent spec produced a stop, and the run waited for Ali. In v2 the build cannot ask, so a silent spec produces a silent assumption instead. That is worse, not better. The gaps list moves the cost back to the one moment a human is already reading, where answering costs a minute instead of a rerun.
 
+- **Every answer is pinned by a criterion.** An entry carries `Pinned:`, naming a sub-task and one of its criteria, and the parse refuses an entry whose `Pinned:` resolves to no criterion in `plan.md`, quoting the line. An assumption nothing runs is a decision the run never checks, and it reaches the report as disclosed fact all the same. An answer the planner cannot express as a criterion is not an assumption: it goes to Ali as a design question, not into this file.
 - A gap Ali answers is folded into the plan before build starts.
 - A gap he leaves alone stands as the recorded assumption. The build proceeds on it and does not revisit it.
 - Gaps that recur across features are a spec-template problem, and the retro says so.
@@ -271,7 +272,7 @@ Work:
 
 Exit: the client baseline is recorded, the full safety net passes on the base branch, and every zone survived its mutation check.
 
-**The net is frozen after this phase.** Freezing is a commit, not an instruction: `bin/net freeze` commits `product/tests/` in the product repo and records the sha as `net_commit` in state. `bin/net check` runs at every relaunch and refuses when the tree differs, or when sub-tasks exist with no freeze behind them. `/harness-build` refuses to start on that check. No worker, reviewer or QA agent may edit a file under `product/tests/`. A test that looks wrong during build is a BLOCKED sub-task with `reason: oracle`, never an edit. This is what makes the net mean anything; without it the loop reaches green by moving the target.
+**The net is frozen after this phase.** Freezing is a commit, not an instruction: `bin/net freeze` commits `product/tests/` in the product repo and records the sha as `net_commit` in state. `bin/net check` runs at every relaunch and refuses when the tree differs, or when a run past this phase has no freeze behind it. A relaunch still inside the safety net is allowed to have none: sub-tasks exist from the parse, and this phase is where the net is written and frozen. Refusing there locks a phase-3 refusal out of its own retry, which is the one relaunch the phase exists to serve. `/harness-build` refuses to start on that check. No worker, reviewer or QA agent may edit a file under `product/tests/`. A test that looks wrong during build is a BLOCKED sub-task with `reason: oracle`, never an edit. This is what makes the net mean anything; without it the loop reaches green by moving the target.
 
 ### Phase 4: Implementation loop
 
@@ -395,6 +396,8 @@ Rules with no counter behind them are a wish. The whole reason for v2 is that a 
 - Per run, the end report (section 13.2) totals them and breaks them down by phase and by agent role.
 - `product/cost-log.md` keeps one line per completed feature: slug, total tokens, wall time, sub-task count, blocked count. Append-only, and the only file in the product layer that is allowed to be a log.
 - The retro compares this run against the last three. A phase whose share grew without the feature growing is a friction to name.
+- `budget.tokens_per_feature` is set from a measured run, never invented. A number below what the engine actually spends flags every run and so measures nothing.
+- The overrun is counted once per run, over the run's own total. A per-sub-task check reports a feature that came in under budget as a string of overruns.
 - A run that exceeds `budget.tokens_per_feature` from the config does not stop. It flags the overrun in the report and the retro treats it as a defect in the harness, not in the feature.
 
 ### 6.3 Model and effort per role
@@ -522,6 +525,7 @@ Running a client's stacks needs their env files, database and service credential
 - Credentials live in `workspaces/<client>/secrets/`, outside git, outside the product layer, never in `client.config.yaml`. The config references them by name, not by value.
 - The harness injects them into stack processes as env vars at start. No agent ever reads the secrets directory, and no briefing quotes a value.
 - Output of stack and seed commands is scrubbed for those values before it enters any context, so a service that echoes its connection string on boot cannot leak it into a transcript.
+- **The scrubber has a floor and a boundary.** A value under 8 characters fails setup, named by its key, rather than being substituted: a short value collides with ordinary output and shreds it. A value is replaced only on a token boundary, so a secret that happens to match part of a path or an identifier does not take the rest of it with it. A scrubber that mangles every friction it touches is turned off by the first person who reads one.
 - **The scrubber covers what the harness runs, not what an agent runs.** A command an agent issues itself in bash reaches that agent's transcript directly, and no layer below can intercept it. What covers that gap instead: agents never read the secrets directory, briefings never quote a value, and every stack command with a secret in it is invoked through the harness rather than composed by an agent. State the limit rather than trusting a guarantee the mechanism does not provide.
 - Test data is seeded and fake. A run never touches a client's real database, staging included.
 - Deleting a workspace deletes the secrets with it.

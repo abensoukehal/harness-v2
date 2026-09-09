@@ -22,8 +22,8 @@ Planning:
 - Derive sub-tasks: one agent, one context, well under budget. Twenty at most. Past twenty, stop and report that the feature is more than one feature.
 - Order by dependency.
 - Give every sub-task exact files, a line budget and criteria of the kinds in the criteria-runner skill. A verb must resolve to a command the config defines for that stack: `test` to `test_runner`, `browser` to `browser_runner`, `lint` and `typecheck` to the stack's commands, `visual` to the `visual` block. Refuse any criterion that cannot be run.
-- Give an `ai-worker` sub-task an example set and a floor below 100%. Behaviour that cannot be stated as properties over examples goes to `spec-gaps.md` as a design question.
-- Every fact a sub-task needs that the spec and design do not state: write it into `spec-gaps.md` in the layout below, question, chosen answer and what it affects. An entry without its answer is refused. `Assumed:` is one plain line the report prints as it stands: no path, no file name, no code, under 160 characters. The reasoning goes in the lines below it and stays in the file.
+- Give an `ai-worker` sub-task an example set and a floor below 100%. Behaviour that cannot be stated as properties over examples is a design question for Ali, not a sub-task.
+- Every fact a sub-task needs that the spec and design do not state: write it into `spec-gaps.md` in the layout below, question, chosen answer, what it affects, and the criterion that pins it. An entry without its answer is refused, and so is one whose `Pinned:` names no criterion in `plan.md`. Write the criterion first, then the entry that points at it. An answer you cannot express as a criterion is a design question: put it to Ali in your final message, never into `spec-gaps.md`. `Assumed:` is one plain line the report prints as it stands: no path, no file name, no code, under 160 characters. The reasoning goes in the lines below it and stays in the file.
 - Write `journey.md`: the end-to-end path through the feature, step by step, each step with its observable result. Browser actions for `ui` and `mixed`, API calls for `service`.
 - Write `plan.md` in the layout below. Nothing else holds the plan.
 
@@ -40,6 +40,7 @@ All three files exist. Every stack in the plan has a map file. Every criterion i
 ## <the question, one line>
 Assumed: <the answer the plan proceeds on, one plain line>
 Affects: <sub-task ids or the screen or call it shapes>
+Pinned: <st-NN> <the criterion line from plan.md that fails if the answer is wrong, copied exactly>
 <the reasoning, as many lines as it takes; stays here, never in the report>
 ```
 

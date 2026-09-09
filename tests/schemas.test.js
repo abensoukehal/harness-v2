@@ -65,6 +65,7 @@ rejects("config", "two-stack/client.config.yaml", [
   ["unknown notify event", (c) => c.notify.events.push("deploy_done"), /^\/notify\/events\/3$/],
   ["duplicate notify event", (c) => c.notify.events.push("plan_ready"), /^\/notify\/events$/],
   ["client_tests key not a stack", (c) => (c.client_tests.mobile = "x"), /^\/client_tests\/mobile$/],
+  ["client_tests disagreeing with the stack's own test command", (c) => (c.client_tests.backend = "pytest -q"), /^\/client_tests\/backend$/],
   ["test_runner key not a stack", (c) => (c.test_runner.mobile = "x"), /^\/test_runner\/mobile$/],
   ["missing test_runner", (c) => delete c.test_runner, /^\/test_runner$/],
   ["tokens_per_feature 0", (c) => (c.budget.tokens_per_feature = 0), /^\/budget\/tokens_per_feature$/],

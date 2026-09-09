@@ -15,7 +15,7 @@ from pathlib import Path
 from . import HarnessError
 from .config import load_config, load_state, save_state, stack_dir, state_path
 from .ports import allocate, is_held
-from .secrets import Scrubber, load_env_file
+from .secrets import FLOOR, Scrubber, load_env_file, too_short
 from . import worktree
 
 POLL_S = 0.5
@@ -54,6 +54,11 @@ def load_secrets(ws, cfg):
             values = load_env_file(path)
         per_stack[name] = values
         everything.update(values)
+    short = too_short(everything)
+    if short:
+        raise HarnessError("secrets: %s under the %d-character floor. The scrubber cannot redact a value that short "
+                           "without shredding ordinary output, so the run refuses rather than leak or mangle (9.3)"
+                           % (", ".join(short), FLOOR))
     return per_stack, Scrubber(everything)
 
 

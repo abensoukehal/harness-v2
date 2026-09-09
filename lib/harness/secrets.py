@@ -1,4 +1,11 @@
-MIN_LEN = 4  # ponytail: shorter values are not secrets and would shred ordinary output
+import re
+
+FLOOR = 8  # a shorter value is not a secret, and substituting it shreds every ordinary line that happens to contain it (9.3)
+
+
+def too_short(secrets):
+    """Keys whose value is under the floor. Setup names them and refuses; it never runs with a scrubber that cannot cover them."""
+    return sorted(k for k, v in secrets.items() if 0 < len(v) < FLOOR)
 
 
 def load_env_file(path):
@@ -19,10 +26,12 @@ def load_env_file(path):
 
 class Scrubber:
     def __init__(self, secrets):
-        pairs = [(v, k) for k, v in secrets.items() if len(v) >= MIN_LEN]
+        pairs = [(v, k) for k, v in secrets.items() if len(v) >= FLOOR]
         self.pairs = sorted(pairs, key=lambda p: -len(p[0]))
 
     def scrub(self, text):
+        # On a token boundary only: a value that is part of a longer word is not the secret, and redacting it there
+        # eats the path or identifier around it.
         for value, key in self.pairs:
-            text = text.replace(value, "[REDACTED %s]" % key)
+            text = re.sub(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % re.escape(value), "[REDACTED %s]" % key, text)
         return text

@@ -214,6 +214,15 @@ class Up(unittest.TestCase):
         self.assertFalse((ws / ".run/hello").exists())
         self.assertFalse(is_held(load_state(ws, "hello")["ports"]["api"]))
 
+    def test_a_secret_under_the_floor_is_refused_by_key(self):
+        ws = self.workspace()
+        (ws / "secrets/api.env").write_text("API_KEY=abcd\n")
+        done = run("up", "hello", ws=ws)
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("secrets: API_KEY under the 8-character floor", done.stderr)
+        self.assertNotIn("DB_PASSWORD", done.stderr, "only the value that is too short is named")
+        self.assertFalse((ws / ".run/hello").exists(), "nothing started behind a scrubber that cannot cover a value")
+
     def test_missing_state_or_secret_is_named(self):
         ws = self.workspace()
         (ws / "secrets/web.env").unlink()

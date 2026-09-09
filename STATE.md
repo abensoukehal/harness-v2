@@ -20,6 +20,10 @@ planner, test-writer, worker, reviewer, qa, retro. Skills: criteria-runner, visu
 - Model and effort per role are config (`agents:` in `client.config.yaml`), static per workspace, passed to every spawn in all three workflows; `bin/agents` resolves them.
 - Cost comes from the runtime transcripts: input tokens per agent, counted only for agents whose first message names both the feature and the workspace path, with the model and effort that spent them.
 - A relaunch still inside the safety net rebuilds and refreezes it; the net check refuses an unfrozen net only past that phase.
+- Every answered gap carries `Pinned:`, a sub-task and one of its criteria; `bin/plan` refuses an answer that resolves to no criterion in `plan.md`.
+- The scrubber redacts a value of at least 8 characters, on a token boundary; a shorter secret fails setup by key instead of being substituted.
+- `client_tests.<stack>` and `stacks.<stack>.commands.test` are one command, and the cross-field pass refuses a config where they differ.
+- `budget.tokens_per_feature` comes from a measured run; the overrun is counted once, over the run's own total.
 - `harness/` in a workspace runs the pinned commit only; the retro never moves it.
 
 ## Known limits

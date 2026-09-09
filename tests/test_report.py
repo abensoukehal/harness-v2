@@ -30,7 +30,7 @@ class Report(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.ws = env_workspace(Path(self.tmp.name))
-        (self.ws / "product/features/hello/spec-gaps.md").write_text("# gaps\n\n## Which format wins?\nAssumed: comma, the common case.\nAffects: st-01\n\n## Empty export?\nAssumed: a header row and nothing else.\nAffects: st-01\n")
+        (self.ws / "product/features/hello/spec-gaps.md").write_text("# gaps\n\n## Which format wins?\nAssumed: comma, the common case.\nAffects: st-01\nPinned: st-01 lint\n\n## Empty export?\nAssumed: a header row and nothing else.\nAffects: st-01\nPinned: st-01 lint\n")
         state = load_state(self.ws, "hello")
         state.update(phase="finished", delivered=True, wall_time_s=300, subtasks=[
             st("st-01", "api", "svc", status="done", attempts=1, commit="a" * 40, cost=COST, goal="Orders export as CSV"),
@@ -100,17 +100,30 @@ class Report(unittest.TestCase):
         for assumed, problem in [("`archived=1` only", "which is code or a path"),
                                  ("the class lives in public/style.css", "which is code or a path"),
                                  ("a button whose text swaps " + "x" * 160, "past 160")]:
-            gaps.write_text("# gaps\n\n## Which format wins?\nAssumed: %s\nAffects: st-01\n" % assumed)
+            gaps.write_text("# gaps\n\n## Which format wins?\nAssumed: %s\nAffects: st-01\nPinned: st-01 lint\n" % assumed)
             done = run("report", "hello", ws=self.ws)
             self.assertEqual(done.returncode, 1, assumed)
             self.assertIn("'Assumed:' is one plain line", done.stderr)
             self.assertIn(problem, done.stderr, assumed)
             self.assertIn("Put the reasoning in the lines below it", done.stderr)
-        gaps.write_text("# gaps\n\n## Which format wins?\nAssumed: commas, the common case.\nAffects: st-01\nThe spec named neither; both readers accept commas.\n")
+        gaps.write_text("# gaps\n\n## Which format wins?\nAssumed: commas, the common case.\nAffects: st-01\nPinned: st-01 lint\nThe spec named neither; both readers accept commas.\n")
         text = run("report", "hello", ws=self.ws).stdout
         self.assertIn("- commas, the common case.", text)
         self.assertNotIn("both readers accept", text, "the reasoning stays in the gaps file")
         gaps.write_text(good)
+
+    def test_the_overrun_is_counted_once_over_the_run_and_never_per_subtask(self):
+        state = load_state(self.ws, "hello")
+        many = [st("st-%02d" % i, "api", "svc", status="done", attempts=1, commit="a" * 40, goal="Step %d" % i,
+                   cost=dict(COST, tokens_in=9000, tokens_out=1000)) for i in range(1, 11)]
+        state["subtasks"] = many  # ten sub-tasks, 100,000 tokens: the budget exactly, so the run is not over it
+        save_state(self.ws, "hello", state)
+        self.assertNotIn("Over the feature budget", run("report", "hello", ws=self.ws).stdout)
+        state["subtasks"] = many + [st("st-11", "api", "svc", status="done", attempts=1, commit="a" * 40, goal="Step 11",
+                                       cost=dict(COST, tokens_in=9000, tokens_out=1000))]
+        save_state(self.ws, "hello", state)
+        text = run("report", "hello", ws=self.ws).stdout
+        self.assertEqual(text.count("Over the feature budget"), 1, "one run, one overrun line")
 
     def test_a_detail_path_is_written_from_the_workspace_root(self):
         state = load_state(self.ws, "hello")
