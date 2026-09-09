@@ -86,7 +86,7 @@ class Plan(unittest.TestCase):
             (PLAN.replace("line_budget: 40\n", ""), "line 14: missing field 'line_budget'"),
             (PLAN.replace("- lint", "- manual looks correct"), "line 12: not a criterion"),
             (PLAN.replace("0.9", "1"), "line 31: examples floor must be"),
-            (PLAN.replace("depends_on: none", "depends_on: st-02"), "line 7: depends on 'st-02' which is not an earlier"),
+            (PLAN.replace("depends_on: none", "depends_on: st-09"), "line 7: depends on 'st-09' which is not a sub-task in this plan"),
             (PLAN.replace("## st-03", "## st-01"), "line 25: duplicate sub-task id"),
             (PLAN.replace("- examples api/summaries.json 0.9\n", ""), "line 25: sub-task has no criterion"),
             (PLAN.replace("- http GET", "- http FETCH"), "line 11: http method must be"),
@@ -151,6 +151,38 @@ class Plan(unittest.TestCase):
             self.assertIn("\n  Pinned: %s" % pin, done.stderr, pin)
         gaps.write_text(entry % ("st-01 " + PIN))
         self.assertEqual(plan(self.ws, PLAN).returncode, 0)
+
+    def test_a_subtask_that_is_really_several_is_refused(self):
+        for text, expected in [
+            # a sixth criterion on st-01
+            (PLAN.replace("- lint\n", "- lint\n- typecheck\n- browser web/export.spec.js\n- test api/test_rows.py\n", 1),
+             "line 15: sub-task carries 6 criteria, past 5"),
+            # two stacks named on one sub-task
+            (PLAN.replace("stack: api\nfiles: repos/svc/export.py", "stack: api, web\nfiles: repos/svc/export.py"),
+             "line 5: a sub-task runs in one stack"),
+            # one stack named, a file reached in another stack's repo
+            (PLAN.replace("files: repos/svc/export.py, repos/svc/routes.py", "files: repos/svc/export.py, repos/web/orders.js"),
+             "line 6: file 'repos/web/orders.js' is outside repos/svc, the repo of stack 'api': a sub-task runs in one stack"),
+            # st-01 waits on st-02, which waits on st-01
+            (PLAN.replace("depends_on: none", "depends_on: st-02"), "line 4: dependency cycle: st-01 > st-02 > st-01"),
+            # a cycle no line of the file shows in order: st-03 waits on st-02, which the plan already has waiting on st-01
+            (PLAN.replace("## st-01 · Orders export as CSV through the API\nstack: api\nfiles: repos/svc/export.py, repos/svc/routes.py\ndepends_on: none",
+                          "## st-01 · Orders export as CSV through the API\nstack: api\nfiles: repos/svc/export.py, repos/svc/routes.py\ndepends_on: st-03"),
+             "dependency cycle:"),
+        ]:
+            done = plan(self.ws, text)
+            self.assertEqual(done.returncode, 1, expected)
+            self.assertIn(expected, done.stderr, expected)
+        self.assertEqual(plan(self.ws, PLAN).returncode, 0, "the plan itself is fine")
+
+    def test_a_dependency_may_be_declared_before_the_sub_task_that_carries_it(self):
+        forward = PLAN.replace("## st-01 · Orders export as CSV through the API\nstack: api\nfiles: repos/svc/export.py, repos/svc/routes.py\ndepends_on: none",
+                               "## st-01 · Orders export as CSV through the API\nstack: api\nfiles: repos/svc/export.py, repos/svc/routes.py\ndepends_on: st-03")
+        forward = forward.replace("## st-03 · Each row carries a one-line summary\nstack: api\nfiles: repos/svc/summarize.py\ndepends_on: st-01, st-02",
+                                  "## st-03 · Each row carries a one-line summary\nstack: api\nfiles: repos/svc/summarize.py\ndepends_on: none")
+        done = plan(self.ws, forward)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(json.loads(done.stdout)["subtasks"][0]["depends_on"], ["st-03"])
 
     def test_a_screen_feature_without_a_visual_check_is_refused_unless_declared(self):
         config = self.ws / "product/client.config.yaml"

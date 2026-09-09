@@ -52,6 +52,9 @@ class Workflows(unittest.TestCase):
         self.assertNotIn("harness/bin/tag-push", skill)
         plan = (ROOT / "claude/workflows/harness-plan.js").read_text()
         self.assertIn("${T('notify')} ${slug} plan_ready", plan)
+        self.assertLess(plan.index("${T('review')}"), plan.index("${T('notify')} ${slug} plan_ready"), "the review renders the message the push sends")
+        self.assertNotIn("plan_message", plan, "no agent writes the plan-ready message (13.3)")
+        self.assertNotIn("message: planning.message", plan)
 
 
     def test_every_agent_spawn_takes_its_model_and_effort_from_the_config(self):

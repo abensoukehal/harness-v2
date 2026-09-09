@@ -8,6 +8,7 @@ KINDS = ("ui", "service", "mixed")
 HEADING = re.compile(r"^## (st-[0-9]{2,}) · (.+)$")
 FIELD = re.compile(r"^([a-z_]+):\s*(.*)$")
 REQUIRED = ["stack", "files", "depends_on", "line_budget", "criteria"]
+MAX_CRITERIA = 5
 METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
 MAX_SUBTASKS = 20
 ROLE_HINTS = [("frontend", ("web", "ui", "frontend", "front")), ("mobile", ("mobile", "ios", "android", "app")),
@@ -88,12 +89,15 @@ def parse(text, cfg, slug=None):
         fail(subtasks[0]["_line"], "missing 'kind: ui | service | mixed' before the first sub-task")
 
     comparable = cfg.get("design", {}).get("comparable", True)
-    out, seen, texts = [], [], {}
+    ids = [s["id"] for s in subtasks]
+    out, texts = [], {}
     for st in subtasks:
         for key in REQUIRED:
             if key not in st:
                 fail(st["_line"], "missing field %r" % key)
         i, stack = st["stack"]
+        if "," in stack or len(stack.split()) > 1:
+            fail(i, "a sub-task runs in one stack; name one of %s and split the rest into their own sub-tasks" % ", ".join(sorted(stacks)))
         if stack not in stacks:
             fail(i, "unknown stack %r; config has %s" % (stack, ", ".join(sorted(stacks))))
         if stacks[stack]["repo"] is None:
@@ -102,30 +106,65 @@ def parse(text, cfg, slug=None):
         files = [f.strip() for f in files.split(",") if f.strip()]
         if not files:
             fail(i, "files must list at least one path")
+        home = "repos/%s/" % stacks[stack]["repo"]
+        for f in files:
+            if not f.startswith(home):
+                fail(i, "file %r is outside %s, the repo of stack %r: a sub-task runs in one stack" % (f, home.rstrip("/"), stack))
         i, deps = st["depends_on"]
         deps = [] if deps == "none" else [d.strip() for d in deps.split(",") if d.strip()]
         for d in deps:
             if d == st["id"]:
                 fail(i, "a sub-task cannot depend on itself")
-            if d not in seen:
-                fail(i, "depends on %r which is not an earlier sub-task" % d)
+            if d not in ids:
+                fail(i, "depends on %r which is not a sub-task in this plan" % d)
         i, budget = st["line_budget"]
         if not budget.isdigit():
             fail(i, "line_budget must be a whole number")
         if not st["_criteria"]:
             fail(st["_line"], "sub-task has no criterion")
+        if len(st["_criteria"]) > MAX_CRITERIA:
+            fail(st["_criteria"][MAX_CRITERIA][0], "sub-task carries %d criteria, past %d: it is more than one sub-task"
+                 % (len(st["_criteria"]), MAX_CRITERIA))
         criteria = [criterion(i, text, cfg, stack, fail, comparable) for i, text in st["_criteria"]]
         texts[st["id"]] = [text for _, text in st["_criteria"]]  # what a gap's 'Pinned:' resolves against (4.2)
         out.append({"id": st["id"], "stack": stack, "goal": st["goal"], "files": files, "depends_on": deps,
                     "line_budget": int(budget), "exit_criteria": criteria, "status": "pending", "attempts": 0,
                     "interruptions": 0, "worktree": ".worktrees/%s/%s" % (slug, stacks[stack]["repo"]),
                     "role": role_of(stack, stacks[stack])})
-        seen.append(st["id"])
+    cycle = find_cycle({s["id"]: s["depends_on"] for s in out})
+    if cycle:
+        fail(next(s["_line"] for s in subtasks if s["id"] == cycle[0]), "dependency cycle: %s" % " > ".join(cycle))
     # A kind that activates the visual diff and a plan without one must disagree loudly (4.0, 5.3); only a declared
     # design.comparable: false in the config lets a screen feature skip it.
     if kind in ("ui", "mixed") and comparable and not any(c["kind"] == "visual" for s in out for c in s["exit_criteria"]):
         fail(subtasks[0]["_line"], "kind %s activates the visual diff and no sub-task carries a visual criterion; add one or declare design.comparable: false in the config" % kind)
     return {"kind": kind, "subtasks": out, "comparable": comparable, "criteria_text": texts}
+
+
+def find_cycle(deps):
+    """One cycle in the dependency graph as the ids around it, or None. The plan declares order; nothing infers it from the file."""
+    state, trail = {}, []
+
+    def visit(node):
+        if state.get(node) == "open":
+            return trail[trail.index(node):] + [node]
+        if state.get(node) == "closed":
+            return None
+        state[node] = "open"
+        trail.append(node)
+        for dep in deps.get(node, []):
+            found = visit(dep)
+            if found:
+                return found
+        trail.pop()
+        state[node] = "closed"
+        return None
+
+    for node in deps:
+        found = visit(node)
+        if found:
+            return found
+    return None
 
 
 def criterion(i, text, cfg, stack, fail, comparable=True):

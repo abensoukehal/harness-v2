@@ -251,6 +251,8 @@ The plan is the only thing a human touches, so the handoff cannot be ambiguous.
 - **`plan.md` is the source of truth.** Ali edits markdown, not JSON, and he edits it freely: reword a goal, drop a sub-task, change a file list, reorder, adjust a criterion.
 - `/harness-build` parses `plan.md` at start and writes the sub-task list into `state.json` from it. The plan is never written back to `plan.md` by the build.
 - The parse is strict. A sub-task missing a required field, or a criterion that is not one of the kinds in section 5.1, fails the build immediately with the offending line quoted. Failing at second zero is the cheapest possible failure, and a silently misread plan is the most expensive.
+- **Shape is part of the parse.** Three refusals, each about a sub-task that is really several: more than five criteria on one sub-task; more than one stack on one sub-task, whether named in `stack:` or reached through a file outside that stack's repo; a cycle in `depends_on`.
+- **Dependencies are declared, never inferred.** `depends_on` names sub-task ids, forward or backward, and the order of blocks in the file carries nothing. `bin/next` reads the declaration. A plan Ali reorders while reading it means exactly what it meant before.
 - On resume, `state.json` wins for what is already done. `plan.md` is not re-parsed mid-run; editing it during a run has no effect until the next launch.
 
 #### 4.2 Why the gaps list exists
@@ -662,6 +664,29 @@ Each assumption is **one line of plain words**: the decision taken, not the code
 `Detail:` paths are workspace-relative. An absolute path into a session scratchpad is meaningless on the device the message is read on.
 
 Same rule as section 13: everything technical lives on the `Detail:` line. The report ends with what happened, never with a question about whether to continue.
+
+### 13.3 The plan review
+
+The other artefact Ali reads, at the one checkpoint where a minute of his time replaces a rerun. It is rendered from the parsed plan by a tool. No agent writes it: a model summarising its own plan reports the plan it meant to write.
+
+```
+<feature> — plan ready
+
+- <goal>
+- <goal>
+
+<n> sub-tasks, at most <n> criteria on one, <n> reaching into more than one stack.
+
+A. Approve, and the build runs it.
+Anything else you write is an edit to the plan, and this renders again.
+
+Detail: <plan.md> <plan.mmd>
+```
+
+- The summary is the sub-task goals, in the feature's own vocabulary. Every line above `Detail:` passes the same check the end report passes: no path, no file name, no class or function name. A goal that fails it fails the review, and the plan goes back to the planner.
+- The three numbers are the shape of the plan, not its quality. They are the numbers that predict a bad run: too many sub-tasks, a sub-task carrying too much, a sub-task spanning stacks.
+- The graph is Mermaid, written to `plan.mmd` in the feature folder and linked from `Detail:`. What waits on what is the one thing a list of goals cannot show.
+- `plan_ready` pushes this message, never `plan.md`. Answering `A` approves it; anything else is an edit Ali makes to `plan.md`, and the review renders again from what he wrote.
 
 ## 14. Retrospective and self-improvement
 

@@ -37,9 +37,9 @@ const PLANNING = {
   type: 'object',
   properties: {
     kind: { enum: ['ui', 'service', 'mixed'] }, subtask_count: { type: 'integer' }, gap_count: { type: 'integer' },
-    journey_steps: { type: 'integer' }, message: { type: 'string' },
+    journey_steps: { type: 'integer' },
   },
-  required: ['kind', 'subtask_count', 'gap_count', 'journey_steps', 'message'],
+  required: ['kind', 'subtask_count', 'gap_count', 'journey_steps'],
 }
 const RESULT = {
   type: 'object',
@@ -92,7 +92,7 @@ const planning = await spawn(
   `Workspace root: ${WS}. Feature ${slug}. Every path below is absolute; use these, resolve none yourself. ` +
   `Ingestion found stacks ${ingestion.stacks.join(', ')} and zones ${ingestion.zones.join(', ')}. ${ingestion.summary}\n` +
   `Run the Planning part of your Method. Write ${FEATURE}/plan.md in the exact layout, ${FEATURE}/spec-gaps.md and ${FEATURE}/journey.md. ` +
-  'Return kind, the counts, and the plan-ready message in the communicate skill shape as "message".',
+  'Return kind and the counts. The plan-ready message is rendered from the plan by a tool (13.3); write none.',
   { agentType: 'planner', label: 'plan', schema: PLANNING, ...A('planner') })
 if (!planning) throw new Error(RUNTIME('plan'))
 
@@ -112,9 +112,11 @@ if (!parsed || !parsed.ok) {
   parsed = await parseStep()
   if (!parsed || !parsed.ok) throw new Error(`plan.md still malformed:\n${parsed && parsed.error}`)
 }
-await spawn(
-  `${IO}Run:\n${T('state')} update ${slug} - <<'EOF'\n${JSON.stringify({ plan_message: planning.message })}\nEOF\n${T('notify')} ${slug} plan_ready\nReturn ok true when both exit 0, else ok false with stderr as error.`,
-  { label: 'notify', schema: RESULT, ...A('io') })
+// The plan review is a tool over the parsed plan (13.3): the summary, the three numbers and the graph Ali reads, no model.
+const reviewed = await spawn(
+  `${IO}Run:\n${T('review')} ${slug}\n${T('notify')} ${slug} plan_ready\nReturn ok true when both exit 0, else ok false with stderr as error.`,
+  { label: 'review and notify', schema: RESULT, ...A('io') })
+if (!reviewed || !reviewed.ok) throw new Error(`the plan review refused the plan: ${reviewed && reviewed.error}`)
 await spawn(`${IO}Run \`${T('cost')} ${slug}\`. Return ok by exit code.`, { label: 'cost', schema: RESULT, ...A('io') })
 log(`plan ready: ${parsed.subtask_count} sub-tasks, ${planning.gap_count} gaps, ${planning.journey_steps} journey steps`)
-return { plan: `${FEATURE}/plan.md`, subtasks: parsed.subtask_count, gaps: planning.gap_count, journey_steps: planning.journey_steps, message: planning.message }
+return { plan: `${FEATURE}/plan.md`, graph: `${FEATURE}/plan.mmd`, subtasks: parsed.subtask_count, gaps: planning.gap_count, journey_steps: planning.journey_steps }

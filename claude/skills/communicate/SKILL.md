@@ -27,7 +27,7 @@ Detail: <path to the feature folder>
 A report is never a question: end with what happened, drop the options block, keep `Still running` and `Detail`.
 
 ## Pushed events
-Three events reach the chat from `notify.telegram`: plan ready, run finished, needs answer. Nothing else pushes. A failed send goes to `frictions` in `state.json`; the run continues.
+Three events reach the chat from `notify.telegram`: plan ready, run finished, needs answer. Nothing else pushes. Plan ready and run finished are rendered by `harness/bin/review` and `harness/bin/report` from the plan and the state; no agent writes either. A failed send goes to `frictions` in `state.json`; the run continues.
 
 ## End-of-run report
 ```
