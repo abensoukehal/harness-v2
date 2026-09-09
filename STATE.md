@@ -29,7 +29,7 @@ planner, test-writer, worker, reviewer, qa, retro. Skills: criteria-runner, visu
 - The retro changes the engine on a first friction only for four causes, declared to `bin/friction` as a category rather than spelled out of the cause slug; the rest sit in `product/frictions.md` until a second run.
 - A guard's test drives an input that reaches the refused branch; a guard no input can reach is made reachable or removed.
 - A workflow script decides nothing inline: its branches sit in the decisions block, and each one is called from a test with both inputs.
-- `hygiene.sh` fails a commit that puts the instruction corpus past 40,000 characters.
+- `hygiene.sh` fails a commit that puts the instruction corpus past 40,000 characters; the corpus counts the markdown and the prompt text inside the workflow scripts.
 - `harness/` in a workspace runs the pinned commit only; the retro never moves it.
 
 ## Known limits

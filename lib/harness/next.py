@@ -1,5 +1,4 @@
 """The next round of the build loop (phase 4): which sub-tasks run, which are skipped, nothing halts."""
-from . import HarnessError
 from .config import load_config, load_state, save_state
 
 MAX_PARALLEL = 4
@@ -48,6 +47,6 @@ def next_batch(ws, slug):
         repos.add(repo)
         ready.append(st["id"])
     save_state(ws, slug, state)
-    if pending and not ready:
-        raise HarnessError("no runnable sub-task among %s: their dependencies are neither done nor dead" % ", ".join(s["id"] for s in pending))
+    # Pending with nothing ready means every pending sub-task waits on another pending one: a cycle, and load_state is
+    # the single door that refuses one. A second refusal here could not fire, and a refusal that cannot fire is not a rule.
     return {"ready": ready, "skipped": skipped, "pending": len(pending)}

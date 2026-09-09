@@ -5,7 +5,8 @@
 # usage: hygiene.sh [--harness DIR] [--workspace DIR]
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
-harness=$(dirname "$here")
+own=$(dirname "$here")   # the repo this script lives in; --harness only changes the tree it measures
+harness=$own
 workspace=""
 while [ $# -gt 0 ]; do
   case $1 in
@@ -72,15 +73,10 @@ PY
   scan words  "$words_rx"  -i "${product[@]:-}"
 fi
 # The instruction corpus has a hard cap (6.1): every agent loads it, so a retro that grows it past the cap is refused here,
-# not warned about. Same files the corpus test counts.
-corpus=$(python3 - "$harness" <<'PYCORPUS'
-import sys
-from pathlib import Path
-root = Path(sys.argv[1])
-files = [root / "CLAUDE.md", root / "templates" / "workspace" / "CLAUDE.md"] + sorted((root / "claude").rglob("*.md"))
-print(sum(len(p.read_text()) for p in files if p.is_file()))
-PYCORPUS
-) || { echo "cannot measure the instruction corpus under $harness" >&2; exit 2; }
+# not warned about. The markdown and the prompt text built inside the workflow scripts, counted by the one module the
+# corpus test also calls.
+corpus=$(PYTHONPATH="$own/lib" python3 -c 'import sys; from harness.corpus import total; print(total(sys.argv[1]))' "$harness") \
+  || { echo "cannot measure the instruction corpus under $harness" >&2; exit 2; }
 if [ "$corpus" -gt 40000 ]; then
   printf 'corpus  %s: %s characters, past the cap of 40000\n' "$harness" "$corpus"
   fail=1

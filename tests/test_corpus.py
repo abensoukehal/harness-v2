@@ -2,11 +2,12 @@ import re
 import unittest
 
 from helpers import ROOT
+from harness.corpus import prompt_text, total
 
 CAP = 40000
 AGENTS = sorted((ROOT / "claude" / "agents").glob("*.md"))
 SKILLS = sorted((ROOT / "claude" / "skills").glob("*/SKILL.md"))
-CORPUS = [ROOT / "CLAUDE.md", ROOT / "templates" / "workspace" / "CLAUDE.md"] + sorted((ROOT / "claude").rglob("*.md"))
+WORKFLOWS = sorted((ROOT / "claude" / "workflows").glob("*.js"))
 TECH = re.compile(r"\b(pytest|playwright|django|flask|fastapi|rails|react|next\.?js|vue|angular|svelte|node|npm|pnpm|yarn|"
                   r"python|pip|docker|kubernetes|postgres|mysql|sqlite|redis|swift|kotlin|flutter|typescript|javascript|java|"
                   r"golang|rust|jest|vitest|cypress|selenium|puppeteer|uvicorn|gunicorn|nginx|graphql|prisma|expo)\b", re.I)
@@ -21,9 +22,20 @@ def frontmatter(path):
 
 class Corpus(unittest.TestCase):
     def test_total_under_cap(self):
-        total = sum(len(p.read_text()) for p in CORPUS)
-        print("\ninstruction corpus: %d characters (cap %d)" % (total, CAP))
-        self.assertLess(total, CAP)
+        count = total(ROOT)
+        print("\ninstruction corpus: %d characters (cap %d)" % (count, CAP))
+        self.assertLess(count, CAP)
+
+    def test_prompt_text_in_a_workflow_counts_as_prose(self):
+        """A sentence an agent reads is corpus wherever it is written, and a script is a place it is written."""
+        for p in WORKFLOWS:
+            self.assertGreater(len(prompt_text(p.read_text())), 500, p.name)
+        # The QA prompt's comparable branch: prose, in a script, reaching an agent.
+        build = prompt_text((ROOT / "claude/workflows/harness-build.js").read_text())
+        self.assertIn("capture no screen and report no visual failure", build)
+        self.assertNotIn("agentType", build, "the code around the prose is not corpus")
+        self.assertEqual(prompt_text("const x = 'object'\nconst y = `a ${b} c`\n"), "a  c",
+                         "schema keywords fall under the length; an interpolation is not prose")
 
     def test_all_roles_present(self):
         self.assertEqual([p.stem for p in AGENTS], ["planner", "qa", "retro", "reviewer", "test-writer", "worker"])

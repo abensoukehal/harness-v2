@@ -721,6 +721,7 @@ A friction is one run's evidence. One run cannot tell a defect from a coincidenc
 - **Four causes change the engine on the first occurrence**: `false green`, `secret`, `delivery`, `guard bypassed`. Not a severity judgement, which a model would have to make and would make differently every time. A match against four words, made by a tool.
 - Everything else waits for a second, distinct run. It stays in `frictions.md` with its count, and the retro names it in `retro.md` as recorded and waiting. Nothing is lost; it is only not yet an instruction.
 - The instruction corpus has a hard cap, and `hygiene.sh` fails the retro's commit above it rather than noting it. A retro that cannot fit its fix under the cap consolidates first, which is section 14.4's rule with a number behind it.
+- The corpus is every character an agent loads, wherever it is written: the two `CLAUDE.md` files, the markdown under `claude/`, and the prompt text built inside the workflow scripts. A prompt assembled in JavaScript is instruction prose reaching an agent; counting only the markdown would cap where prose is filed rather than how much of it a run pays for.
 
 The retro agent has the context a merge algorithm lacks: it knows what it wanted to change and why. On conflict it reads the remote version, reads its own intent, and decides: the remote change already covers the need (abandon own change), or the two are compatible (combine them). Never a blind merge. Always rerun harness tests after.
 
