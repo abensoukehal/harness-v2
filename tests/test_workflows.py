@@ -53,6 +53,23 @@ class Workflows(unittest.TestCase):
         plan = (ROOT / "claude/workflows/harness-plan.js").read_text()
         self.assertIn("${T('notify')} ${slug} plan_ready", plan)
 
+
+    def test_every_agent_spawn_takes_its_model_and_effort_from_the_config(self):
+        """6.3: the pair is config, static per workspace, and no script names a model."""
+        for path in SCRIPTS:
+            text = path.read_text()
+            for opts in re.findall(r"\{[^{}]*\bagentType:[^{}]*\}", text):
+                role = re.search(r"agentType: '([a-z-]+)'", opts).group(1)
+                self.assertIn("...A('%s')" % role, opts, "%s: %s spawns without its configured pair" % (path.name, role))
+            # The io steps read theirs too. Only the spawns that run before the config can be read spell the default out.
+            for line in [l for l in text.splitlines() if "effort: 'low'" in l]:
+                self.assertTrue('"$HARNESS_WORKSPACE"' in line or "the io default, spelled out once" in line,
+                                "%s: %s" % (path.name, line.strip()))
+            self.assertNotRegex(text, r"model: '", "%s names a model; models live in client.config.yaml (6.3)" % path.name)
+        self.assertIn("${T('agents')}", (ROOT / "claude/workflows/harness-plan.js").read_text())
+        self.assertIn("${T('agents')}", (ROOT / "claude/workflows/harness-retro.js").read_text())
+        self.assertIn("cfg.agents", (ROOT / "claude/workflows/harness-build.js").read_text())
+
     def test_workspace_root_is_passed_never_resolved(self):
         for p in SCRIPTS:
             text = p.read_text()

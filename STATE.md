@@ -17,7 +17,8 @@ planner, test-writer, worker, reviewer, qa, retro. Skills: criteria-runner, visu
 - The workspace root is passed, never resolved from a working directory.
 - Every spawn is retried once; a second refusal is a friction carrying the runtime's reason, `reason: runtime`, no attempt spent.
 - Schemas handed to `agent()` are inline, in the dialect the runtime accepts: no `$schema`, `$ref` or conditionals. The files under `schemas/` stay the full contract and `bin/validate` and `bin/state` enforce them.
-- Cost comes from the runtime transcripts: input tokens per agent, counted only for agents whose first message names both the feature and the workspace path.
+- Model and effort per role are config (`agents:` in `client.config.yaml`), static per workspace, passed to every spawn in all three workflows; `bin/agents` resolves them.
+- Cost comes from the runtime transcripts: input tokens per agent, counted only for agents whose first message names both the feature and the workspace path, with the model and effort that spent them.
 - `harness/` in a workspace runs the pinned commit only; the retro never moves it.
 
 ## Known limits

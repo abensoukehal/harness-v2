@@ -4,36 +4,85 @@
   "title": "client.config.yaml",
   "type": "object",
   "additionalProperties": false,
-  "required": ["client", "stacks", "delivery", "notify", "test_runner", "budget", "qa"],
+  "required": [
+    "client",
+    "stacks",
+    "delivery",
+    "notify",
+    "test_runner",
+    "budget",
+    "qa"
+  ],
   "properties": {
-    "client": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "client": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$"
+    },
     "stacks": {
       "type": "object",
       "minProperties": 1,
-      "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
-      "additionalProperties": { "$ref": "#/$defs/stack" }
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/stack"
+      }
     },
     "repos": {
       "type": "object",
-      "propertyNames": { "pattern": "^[A-Za-z0-9._-]+$" },
-      "additionalProperties": { "type": "string", "minLength": 1 }
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9._-]+$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
     },
     "delivery": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["base_branch", "target_branch", "branch_prefix", "mode", "commit_author"],
+      "required": [
+        "base_branch",
+        "target_branch",
+        "branch_prefix",
+        "mode",
+        "commit_author"
+      ],
       "properties": {
-        "base_branch": { "type": "string", "minLength": 1 },
-        "target_branch": { "type": "string", "minLength": 1 },
-        "branch_prefix": { "type": "string", "pattern": "^[A-Za-z0-9._/-]+$" },
-        "mode": { "enum": ["pr", "direct_merge"] },
+        "base_branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "branch_prefix": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._/-]+$"
+        },
+        "mode": {
+          "enum": [
+            "pr",
+            "direct_merge"
+          ]
+        },
         "commit_author": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["name", "email"],
+          "required": [
+            "name",
+            "email"
+          ],
           "properties": {
-            "name": { "type": "string", "minLength": 1 },
-            "email": { "type": "string", "pattern": "^[^@\\s]+@[^@\\s]+$" }
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "email": {
+              "type": "string",
+              "pattern": "^[^@\\s]+@[^@\\s]+$"
+            }
           }
         }
       }
@@ -41,132 +90,340 @@
     "git": {
       "type": "object",
       "additionalProperties": false,
-      "properties": { "identity_hygiene": { "enum": ["strict"], "default": "strict" } }
+      "properties": {
+        "identity_hygiene": {
+          "enum": [
+            "strict"
+          ],
+          "default": "strict"
+        }
+      }
     },
     "notify": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["telegram", "events"],
+      "required": [
+        "telegram",
+        "events"
+      ],
       "properties": {
         "telegram": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["chat_id_ref"],
-          "properties": { "chat_id_ref": { "type": "string", "minLength": 1 } }
+          "required": [
+            "chat_id_ref"
+          ],
+          "properties": {
+            "chat_id_ref": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
         },
         "events": {
           "type": "array",
           "uniqueItems": true,
-          "items": { "enum": ["plan_ready", "run_finished", "needs_answer"] }
+          "items": {
+            "enum": [
+              "plan_ready",
+              "run_finished",
+              "needs_answer"
+            ]
+          }
         }
       }
     },
-    "client_tests": { "$ref": "#/$defs/commandsByStack" },
-    "test_runner": { "$ref": "#/$defs/commandsByStack" },
-    "browser_runner": { "$ref": "#/$defs/commandsByStack" },
+    "client_tests": {
+      "$ref": "#/$defs/commandsByStack"
+    },
+    "test_runner": {
+      "$ref": "#/$defs/commandsByStack"
+    },
+    "browser_runner": {
+      "$ref": "#/$defs/commandsByStack"
+    },
     "budget": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["tokens_per_feature"],
+      "required": [
+        "tokens_per_feature"
+      ],
       "properties": {
-        "tokens_per_feature": { "type": "integer", "minimum": 1 },
-        "briefing_chars": { "type": "integer", "minimum": 1000, "default": 12000 }
+        "tokens_per_feature": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "briefing_chars": {
+          "type": "integer",
+          "minimum": 1000,
+          "default": 12000
+        }
       }
     },
     "qa": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["max_fixes"],
-      "properties": { "max_fixes": { "type": "integer", "minimum": 0 } }
+      "required": [
+        "max_fixes"
+      ],
+      "properties": {
+        "max_fixes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
     },
     "visual": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["threshold_pct", "viewport", "max_attempts"],
+      "required": [
+        "threshold_pct",
+        "viewport",
+        "max_attempts"
+      ],
       "properties": {
-        "threshold_pct": { "type": "number", "minimum": 0, "maximum": 100 },
-        "viewport": { "type": "string", "pattern": "^[0-9]+x[0-9]+$" },
-        "max_attempts": { "type": "integer", "minimum": 1, "default": 4 }
+        "threshold_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "viewport": {
+          "type": "string",
+          "pattern": "^[0-9]+x[0-9]+$"
+        },
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 4
+        }
       }
     },
     "design": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["comparable"],
-      "properties": { "comparable": { "type": "boolean" } }
+      "required": [
+        "comparable"
+      ],
+      "properties": {
+        "comparable": {
+          "type": "boolean"
+        }
+      }
     },
-    "max_parallel_features": { "type": "integer", "minimum": 1, "default": 2 },
-    "models": {
+    "max_parallel_features": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 2
+    },
+    "agents": {
       "type": "object",
       "additionalProperties": false,
+      "description": "Model and effort per role (6.3). Static per workspace; a role left out keeps its documented default.",
       "properties": {
-        "planner": { "type": "string" }, "worker": { "type": "string" }, "reviewer": { "type": "string" },
-        "qa": { "type": "string" }, "retro": { "type": "string" }, "io": { "type": "string" }
+        "planner": {
+          "$ref": "#/$defs/agentSetting"
+        },
+        "test-writer": {
+          "$ref": "#/$defs/agentSetting"
+        },
+        "worker": {
+          "$ref": "#/$defs/agentSetting"
+        },
+        "reviewer": {
+          "$ref": "#/$defs/agentSetting"
+        },
+        "qa": {
+          "$ref": "#/$defs/agentSetting"
+        },
+        "retro": {
+          "$ref": "#/$defs/agentSetting"
+        },
+        "io": {
+          "$ref": "#/$defs/agentSetting"
+        }
       }
     }
   },
   "$defs": {
-    "command": { "type": "string", "minLength": 1 },
+    "command": {
+      "type": "string",
+      "minLength": 1
+    },
     "commandsByStack": {
       "type": "object",
-      "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
-      "additionalProperties": { "$ref": "#/$defs/command" }
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/command"
+      }
     },
     "stack": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["repo", "path", "commands", "health", "health_timeout_s"],
+      "required": [
+        "repo",
+        "path",
+        "commands",
+        "health",
+        "health_timeout_s"
+      ],
       "properties": {
-        "repo": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9._-]+$" },
-        "path": { "type": ["string", "null"], "pattern": "^repos/" },
-        "role": { "enum": ["backend", "frontend", "mobile", "ai"] },
-        "framework": { "type": "string" },
-        "package_manager": { "type": "string" },
+        "repo": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z0-9._-]+$"
+        },
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^repos/"
+        },
+        "role": {
+          "enum": [
+            "backend",
+            "frontend",
+            "mobile",
+            "ai"
+          ]
+        },
+        "framework": {
+          "type": "string"
+        },
+        "package_manager": {
+          "type": "string"
+        },
         "commands": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["dev"],
+          "required": [
+            "dev"
+          ],
           "properties": {
-            "install": { "$ref": "#/$defs/command" },
-            "dev": { "$ref": "#/$defs/command" },
-            "build": { "$ref": "#/$defs/command" },
-            "lint": { "$ref": "#/$defs/command" },
-            "typecheck": { "$ref": "#/$defs/command" },
-            "test": { "$ref": "#/$defs/command" }
+            "install": {
+              "$ref": "#/$defs/command"
+            },
+            "dev": {
+              "$ref": "#/$defs/command"
+            },
+            "build": {
+              "$ref": "#/$defs/command"
+            },
+            "lint": {
+              "$ref": "#/$defs/command"
+            },
+            "typecheck": {
+              "$ref": "#/$defs/command"
+            },
+            "test": {
+              "$ref": "#/$defs/command"
+            }
           }
         },
-        "env_file": { "type": "string", "pattern": "^[^/]+$" },
-        "dev_url": { "type": "string", "pattern": "^https?://" },
-        "logs": { "type": "string", "default": "stdout" },
-        "depends_on": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
+        "env_file": {
+          "type": "string",
+          "pattern": "^[^/]+$"
+        },
+        "dev_url": {
+          "type": "string",
+          "pattern": "^https?://"
+        },
+        "logs": {
+          "type": "string",
+          "default": "stdout"
+        },
+        "depends_on": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
         "health": {
           "type": "object",
           "oneOf": [
             {
               "title": "log check",
               "additionalProperties": false,
-              "required": ["log"],
-              "properties": { "log": { "type": "string", "minLength": 1 } }
+              "required": [
+                "log"
+              ],
+              "properties": {
+                "log": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
             },
             {
               "title": "http check",
               "additionalProperties": false,
-              "required": ["http", "expect_status"],
+              "required": [
+                "http",
+                "expect_status"
+              ],
               "properties": {
-                "http": { "type": "string", "minLength": 1 },
-                "expect_status": { "type": "integer", "minimum": 100, "maximum": 599 }
+                "http": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "expect_status": {
+                  "type": "integer",
+                  "minimum": 100,
+                  "maximum": 599
+                }
               }
             },
             {
               "title": "tcp check",
               "additionalProperties": false,
-              "required": ["tcp"],
-              "properties": { "tcp": { "type": ["string", "integer"], "minLength": 1 } }
+              "required": [
+                "tcp"
+              ],
+              "properties": {
+                "tcp": {
+                  "type": [
+                    "string",
+                    "integer"
+                  ],
+                  "minLength": 1
+                }
+              }
             }
           ]
         },
-        "health_timeout_s": { "type": "integer", "minimum": 1 },
-        "seed": { "$ref": "#/$defs/command" }
+        "health_timeout_s": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "seed": {
+          "$ref": "#/$defs/command"
+        }
+      }
+    },
+    "agentSetting": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A model id, or 'inherit' for the session's own model."
+        },
+        "effort": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "inherit"
+          ]
+        }
       }
     }
   }

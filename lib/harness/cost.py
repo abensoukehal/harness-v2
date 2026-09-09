@@ -41,6 +41,7 @@ def record(path, slug, ws):
     role = json.loads(meta.read_text()).get("agentType", "io") if meta.exists() else "io"
     role = ROLES.get(role, role)
     first, tokens_in, tokens_out, turns, start, end = None, 0, 0, 0, None, None
+    model, effort = None, None
     for line in path.read_text(errors="replace").splitlines():
         try:
             e = json.loads(line)
@@ -53,6 +54,9 @@ def record(path, slug, ws):
             tokens_in += u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0) + u.get("cache_read_input_tokens", 0)
             tokens_out += u.get("output_tokens", 0)
             turns += 1
+            # The pair that spent these tokens, read from the transcript: what ran, not what the config asked for (6.3).
+            model = e["message"].get("model") or model
+            effort = e.get("effort") or effort
         stamp = e.get("timestamp")
         if stamp:
             start = start or stamp
@@ -60,7 +64,8 @@ def record(path, slug, ws):
     if first is None or not re.search(r"%s(?![\w-])" % re.escape(str(ws)), first) or not re.search(r"(?<![a-z0-9-])%s(?![a-z0-9-])" % re.escape(slug), first):
         return None
     # run: which workflow launch this agent belonged to, so a second run of the same feature keeps its own span (6.2).
-    out = {"role": role, "run": path.parent.name, "tokens_in": tokens_in, "tokens_out": tokens_out, "turns": turns,
+    out = {"role": role, "run": path.parent.name, "model": model or "unknown", "effort": effort or "inherit",
+           "tokens_in": tokens_in, "tokens_out": tokens_out, "turns": turns,
            "duration_s": int(seconds(end) - seconds(start)) if start and end else 0}
     m = re.search(r"\bst-[0-9]{2,}\b", first[:400])
     if m:
@@ -105,11 +110,14 @@ def cost(ws, slug, dirs=None, out=sys.stdout):
 def summary(agents, wall):
     roles = {}
     for a in agents.values():
-        r = roles.setdefault(a["role"], [0, 0, 0])
+        r = roles.setdefault(a["role"], [0, 0, 0, set()])
         r[0] += a["tokens_in"]
         r[1] += a["tokens_out"]
         r[2] += 1
-    lines = ["%s: %d agents, %s in, %s out" % (role, n, k(i), k(o)) for role, (i, o, n) in sorted(roles.items(), key=lambda kv: -kv[1][0])]
+        if a.get("model"):
+            r[3].add("%s/%s" % (a["model"], a.get("effort", "inherit")))
+    lines = ["%s: %d agents, %s in, %s out%s" % (role, n, k(i), k(o), " (%s)" % ", ".join(sorted(pairs)) if pairs else "")
+             for role, (i, o, n, pairs) in sorted(roles.items(), key=lambda kv: -kv[1][0])]
     total_in = sum(a["tokens_in"] for a in agents.values())
     total_out = sum(a["tokens_out"] for a in agents.values())
     runs = len({a.get("run") for a in agents.values() if a.get("run")})

@@ -8,11 +8,11 @@ from harness.config import load_state, save_state
 from test_next import st
 
 
-def transcript(folder, agent_id, agent_type, first_text, turns, start_minute):
+def transcript(folder, agent_id, agent_type, first_text, turns, start_minute, model="claude-opus-5", effort="low"):
     lines = [{"type": "user", "message": {"role": "user", "content": first_text}, "timestamp": "2026-01-01T10:%02d:00.000Z" % start_minute}]
     for i, (tin, cache_new, cache_read, tout) in enumerate(turns):
-        lines.append({"type": "assistant", "timestamp": "2026-01-01T10:%02d:%02d.000Z" % (start_minute, 10 * (i + 1)),
-                      "message": {"role": "assistant", "usage": {"input_tokens": tin, "cache_creation_input_tokens": cache_new,
+        lines.append({"type": "assistant", "timestamp": "2026-01-01T10:%02d:%02d.000Z" % (start_minute, 10 * (i + 1)), "effort": effort,
+                      "message": {"role": "assistant", "model": model, "usage": {"input_tokens": tin, "cache_creation_input_tokens": cache_new,
                                                                  "cache_read_input_tokens": cache_read, "output_tokens": tout}}})
     (folder / ("agent-%s.jsonl" % agent_id)).write_text("\n".join(json.dumps(l) for l in lines) + "\n")
     (folder / ("agent-%s.meta.json" % agent_id)).write_text(json.dumps({"agentType": agent_type, "spawnDepth": 1}))
@@ -40,7 +40,8 @@ class Cost(unittest.TestCase):
             state = load_state(ws, "hello")
             agents = state["cost_by_agent"]
             self.assertEqual(sorted(agents), ["aaa1", "aaa2", "aaa3", "aaa4"], "only agents whose first message names the feature and this workspace")
-            self.assertEqual(agents["aaa1"], {"role": "io", "run": "wf_1", "tokens_in": 104034, "tokens_out": 47, "turns": 2, "duration_s": 20})
+            self.assertEqual(agents["aaa1"], {"role": "io", "run": "wf_1", "model": "claude-opus-5", "effort": "low",
+                                              "tokens_in": 104034, "tokens_out": 47, "turns": 2, "duration_s": 20})
             self.assertEqual(agents["aaa2"]["role"], "planner")
             self.assertEqual(agents["aaa2"]["tokens_in"], 200015)
             self.assertEqual((agents["aaa3"]["subtask"], agents["aaa4"]["subtask"]), ("st-01", "st-01"))
@@ -48,7 +49,8 @@ class Cost(unittest.TestCase):
             self.assertEqual((cost["tokens_in"], cost["tokens_out"], cost["lines_added"]), (220002, 3040, 12))
             self.assertEqual(cost["duration_s"], 20, "from the agents' own spans when the loop recorded none")
             self.assertEqual(state["wall_time_s"], 190, "first agent start to last agent end inside the run")
-            self.assertIn("planner: 1 agents, 200k in, 2k out", done.stdout)
+            self.assertIn("planner: 1 agents, 200k in, 2k out (claude-opus-5/low)", done.stdout,
+                          "the pair that spent the tokens, read from the transcript (6.3)")
             self.assertIn("total: 4 agents over 1 run, 524k in, 5k out, 190 s wall", done.stdout)
             self.assertNotIn("timestamp", json.dumps(state))
             again = run("cost", "hello", "--transcripts", wf, ws=ws)
@@ -57,7 +59,8 @@ class Cost(unittest.TestCase):
             report = run("report", "hello", ws=ws).stdout
             self.assertIn("529k tokens, 190 s wall time, 1 sub-tasks, 1 attempts, 0 blocked.", report)
             self.assertIn("By role: io: 2 agents", report)
-            self.assertIn("By role: io: 2 agents, 204k in, 87 out; planner: 1 agents, 200k in, 2k out; worker: 1 agents, 120k in, 3k out.", report)
+            self.assertIn("By role: io: 2 agents, 204k in, 87 out (claude-opus-5/low); planner: 1 agents, 200k in, 2k out (claude-opus-5/low); "
+                          "worker: 1 agents, 120k in, 3k out (claude-opus-5/low).", report)
             self.assertIn("hello | 529", (ws / "product/cost-log.md").read_text())
             missing = run("cost", "hello", "--transcripts", Path(d) / "nowhere", ws=ws)
             self.assertEqual(missing.returncode, 0, "a missing directory holds no agents")

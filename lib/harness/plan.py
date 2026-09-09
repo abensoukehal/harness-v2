@@ -2,6 +2,7 @@
 import re
 
 from . import HarnessError
+from .agents import options as agent_options
 
 KINDS = ("ui", "service", "mixed")
 HEADING = re.compile(r"^## (st-[0-9]{2,}) · (.+)$")
@@ -189,6 +190,6 @@ def config_block(cfg):
         "mode": cfg["delivery"]["mode"],
         "branch_prefix": cfg["delivery"]["branch_prefix"],
         "target_branch": cfg["delivery"]["target_branch"],
-        "models": cfg.get("models", {}),
+        "agents": agent_options(cfg),
         "events": cfg["notify"]["events"],
     }

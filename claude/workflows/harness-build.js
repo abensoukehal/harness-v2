@@ -104,9 +104,9 @@ const spawn = async (prompt, opts) => {
   return null
 }
 const RUNTIME = (label) => `${label} · the runtime refused to start it twice: ${refusal} · runtime`
-const io = (task, opts = {}) => agent(IO + task, { effort: 'low', schema: OK, ...opts })
+const io = (task, opts = {}) => agent(IO + task, { ...A('io'), schema: OK, ...opts })
 const readState = async (phaseName) => {
-  const r = await spawn(`${IO}Run \`${T('state')} get ${slug}\` and return its JSON verbatim as state.`, { label: 'read state', schema: STATE, effort: 'low', phase: phaseName })
+  const r = await spawn(`${IO}Run \`${T('state')} get ${slug}\` and return its JSON verbatim as state.`, { label: 'read state', schema: STATE, ...A('io'), phase: phaseName })
   if (!r) throw new Error('state could not be read')
   return r.state
 }
@@ -126,13 +126,14 @@ phase('Launch')
 const launch = await spawn(
   `${IO}Run \`${T('plan')} ${slug}\`. Non-zero exit: plan_ok false, plan_error = its stderr verbatim. Exit 0: plan_ok true, plan = its stdout parsed as JSON, verbatim. ` +
   `Then run \`${T('state')} get ${slug}\`: non-zero exit gives state_exists false; otherwise state_exists true and state = its JSON verbatim.`,
-  { label: 'launch', schema: LAUNCH, effort: 'low' })
+  { label: 'launch', schema: LAUNCH, effort: 'low' })  // before the config is parsed: the io default, spelled out once
 if (!launch) throw new Error('launch agent returned nothing')
 if (!launch.plan_ok) throw new Error(`plan.md refused:\n${launch.plan_error}`)
 if (!launch.state_exists) throw new Error(`no state for ${slug}: run /harness-plan ${slug} first`)
 const plan = launch.plan
 const cfg = plan.config
-const model = (role) => (cfg.models && cfg.models[role] ? { model: cfg.models[role] } : {})
+// Model and effort per role come from the config, never from this script (6.3); harness/bin/agents resolved them and bin/plan passed them through.
+const A = (role) => (cfg.agents && cfg.agents[role]) || {}
 let state = launch.state
 const resuming = state.subtasks.length > 0
 if (resuming) {
@@ -163,7 +164,7 @@ try {
       `Workspace root: ${WS}. Feature ${slug}. Every path below is absolute; use these, resolve none yourself. ` +
       `Follow your Method on ${FEATURE}. Zones come from ${WS}/product/code-map. Write the net under ${WS}/product/tests. ` +
       `Return every zone with mutation_red, and a report under ten lines.`,
-      { agentType: 'test-writer', label: 'safety net', schema: NET, ...model('worker') })
+      { agentType: 'test-writer', label: 'safety net', schema: NET, ...A('test-writer') })
     if (!net) { await refused('safety net', 'Safety net'); throw new Error('the runtime refused to start the test-writer twice; nothing to build on') }
     const vacuous = net.zones.filter((z) => !z.mutation_red).map((z) => z.zone)
     if (vacuous.length) throw new Error(`safety net is vacuous for ${vacuous.join(', ')}: nothing went red under mutation`)
@@ -195,7 +196,7 @@ try {
       while (true) {
         const brief = await io(`Run \`${T('briefing')} ${slug} ${id}\`; output = its stdout verbatim.`, { label: `${id} briefing`, phase: 'Build' })
         if (!brief || !brief.ok) { outcome = { status: 'blocked', reason: 'briefing', last_error: clip(brief && brief.error) }; break }
-        worker = await spawn(brief.output, { agentType: 'worker', label: `${id} worker`, phase: 'Build', schema: WORKER, ...model('worker') })
+        worker = await spawn(brief.output, { agentType: 'worker', label: `${id} worker`, phase: 'Build', schema: WORKER, ...A('worker') })
         if (!worker) { await refused(`${id} worker`, 'Build'); outcome = { status: 'skipped', reason: 'runtime' }; break }
         if (worker.status === 'restart') {
           const served = await serveRestart(id, worker, ++restarts)
@@ -207,7 +208,7 @@ try {
         if (worker.status === 'blocked') { outcome = { status: 'blocked', reason: worker.reason, last_error: clip(worker.report) }; break }
         review = await spawn(
           `${brief.output}\n\n# Worker report\n${worker.report}\nFiles touched: ${(worker.files || []).join(', ')}`,
-          { agentType: 'reviewer', label: `${id} review`, phase: 'Build', schema: REVIEW, ...model('reviewer') })
+          { agentType: 'reviewer', label: `${id} review`, phase: 'Build', schema: REVIEW, ...A('reviewer') })
         if (review && review.status === 'restart') {
           const served = await serveRestart(id, review, ++restarts)
           if (served !== true) { outcome = served; break }
@@ -241,7 +242,7 @@ try {
   const NEXT = { type: 'object', properties: { ready: strings, skipped: strings, pending: { type: 'integer' }, error: { type: 'string' } }, required: ['ready', 'skipped', 'pending'] }
   while (true) {
     const round = await spawn(`${IO}Run \`${T('next')} ${slug}\` and return its JSON verbatim; on a non-zero exit return ready [], skipped [], pending -1 and stderr as error.`,
-      { label: 'next round', schema: NEXT, effort: 'low', phase: 'Build' })
+      { label: 'next round', schema: NEXT, ...A('io'), phase: 'Build' })
     if (!round || round.pending < 0) throw new Error(`build loop stopped: ${round && round.error}`)
     round.skipped.forEach((id) => { summary.skipped.push(id); log(`${id} skipped: a dependency is blocked or skipped`) })
     if (!round.ready.length) break
@@ -264,7 +265,7 @@ try {
         ? `no visual diff: the config declares design.comparable false, so capture no screen and report no visual failure.`
         : `the visual diff on the screens in ${FEATURE}/design.`) +
       ` Return the failures.`,
-      { agentType: 'qa', label: 'global qa', schema: QA, ...model('qa') })
+      { agentType: 'qa', label: 'global qa', schema: QA, ...A('qa') })
     let fixes = 0
     let qa = await runQA()
     if (!qa) { await refused('global qa', 'QA'); qa = { failures: [{ kind: 'qa', subtask: 'none', detail: 'global QA did not run: the runtime refused to start it twice' }] }; fixes = cfg.max_fixes }
@@ -276,10 +277,10 @@ try {
         if (!st) { log(`fix ${fixes}/${cfg.max_fixes}: ${f.subtask} is not a sub-task, left as a gap`); continue }
         const brief = await io(`Run \`${T('briefing')} ${slug} ${f.subtask}\`; output = its stdout verbatim.`, { label: `${f.subtask} briefing` })
         const mission = `${brief && brief.output}\n\n# QA failure to fix\nkind: ${f.kind}\nexpected: ${f.expected || ''}\nobserved: ${f.observed || ''}\n${f.detail}\nFix this failure only.`
-        const w = await spawn(mission, { agentType: 'worker', label: `fix ${f.subtask}`, schema: WORKER, ...model('worker') })
+        const w = await spawn(mission, { agentType: 'worker', label: `fix ${f.subtask}`, schema: WORKER, ...A('worker') })
         let r = null
         if (w && w.status === 'done') {
-          r = await spawn(`${mission}\n\n# Worker report\n${w.report}`, { agentType: 'reviewer', label: `fix ${f.subtask} review`, schema: REVIEW, ...model('reviewer') })
+          r = await spawn(`${mission}\n\n# Worker report\n${w.report}`, { agentType: 'reviewer', label: `fix ${f.subtask} review`, schema: REVIEW, ...A('reviewer') })
         }
         log(`fix ${fixes}/${cfg.max_fixes}: ${f.subtask} ${f.kind} ${r && r.status === 'done' ? 'fixed' : 'not fixed'}`)
       }

@@ -92,3 +92,12 @@ design:
   comparable: true            # false for wireframes and block mockups: no visual criterion, recorded as a gap
 
 max_parallel_features: 2
+
+agents:                       # model and effort per role (6.3); static per workspace, inherit = the session's own setting
+  planner:     { model: inherit, effort: inherit }
+  test-writer: { model: inherit, effort: inherit }
+  worker:      { model: inherit, effort: inherit }
+  reviewer:    { model: inherit, effort: inherit }
+  qa:          { model: inherit, effort: inherit }
+  retro:       { model: inherit, effort: inherit }
+  io:          { model: inherit, effort: low }

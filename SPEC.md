@@ -194,6 +194,24 @@ Not every feature has screens. The plan sets `kind` on the feature and it switch
 - A `service` feature with no design skips design ingestion and the visual diff step entirely. It does not skip QA: the end-to-end journey is replayed through the API instead of the browser.
 - The kind is set at plan time and appears in `plan.md`. A feature that turns out to touch screens mid-build is a plan error, and it surfaces as a `NEEDS:` from the worker rather than a quiet widening.
 
+### 4.0.1 What each phase consumes and produces
+
+A phase that reads something not on its input line is reaching outside its contract, and a phase whose output is missing is a phase that did not run, whatever its exit said. This is the table a resume reads to know what it can trust.
+
+| Phase | Consumes | Produces |
+|---|---|---|
+| 1 Ingestion | `client.config.yaml`, Ali's spec and design, `code-map/`, conventions, the repos | updated `code-map/` entries for the touched zones |
+| 2 Planning | phase 1 output, spec, design, feature kind | `plan.md`, `spec-gaps.md`, `journey.md`, the `plan_ready` ask |
+| Human gate | those three files | Ali's approval, or edits to the plan |
+| 3 Safety net | `plan.md` parsed once, the client's own suite, the zones | `client_test_baseline`, `product/tests/`, mutation proof, `net_commit`, an initialised `state.json` |
+| 4 Build loop | `state.json`, the frozen net, running stacks, briefings | one commit per validated sub-task, statuses, counters, `cost_by_agent`, parked asks |
+| 5 Global QA | `journey.md`, the frozen net, every criterion, the baseline | fix commits, accepted gaps, the regression diff |
+| Delivery | the branch, `state.json` | pushed branch or merge, `delivered` |
+| Report | `state.json`, `spec-gaps.md`, `cost-log.md` | `report.md`, the `run_finished` push |
+| 6 Retro | frictions, cost log, state, transcripts | an engine patch in the retro's own clone, `retro/<slug>`, `STATE.md`, open questions |
+
+Two lines in that table carry most of the design. **`plan.md` is consumed by phase 3 and by nothing after it**: it is parsed once at launch, its criteria are copied into `state.json` in full, and no later phase re-reads it. A plan edited mid-run changes nothing, which is the point. And **the retro produces into its own clone**, never into the workspace's `harness/`, which is what keeps the pin honest.
+
 ### Phase 1: Ingestion (targeted)
 
 Inputs: `spec.md`, `design/` (Figma export or Claude Design export as images plus any structured data), `client.config.yaml`, `conventions.md` and `code-map/` if they exist from previous features.
@@ -246,7 +264,7 @@ In v1 a silent spec produced a stop, and the run waited for Ali. In v2 the build
 ### Phase 3: Safety net
 
 Work:
-- **Run the client's own test suite first**, if they have one, on the untouched base branch. Record **the failing tests by name** in `state.json` as the inherited baseline. A suite that fails to execute at all — a module error, a missing runner, a bad command — yields no baseline and is not recorded as one failing test named after a directory. That is a BLOCKED run with `reason: environment` at phase 3, because without a baseline the QA diff cannot tell the client's red from ours, which is the entire point of the phase. Parse the runner's output strictly enough to reject its own header lines. A directory name is not a baseline: the whole purpose is to tell, at QA, which red is the client's and which is ours, and `["tests"]` cannot answer that. Nothing in it is fixed and nothing in it blocks the run, but a test that was green at the start and is red at the end is a regression the harness caused. This is the only coverage of code outside the map, which is where legacy breaks.
+- **Run the client's own test suite first**, if they have one, on the untouched base branch. Record **the failing tests by name** in `state.json` as the inherited baseline. A suite that fails to execute at all — a module error, a missing runner, a bad command — yields no baseline and is not recorded as one failing test named after a directory. The run refuses at phase 3 with a friction reading `environment`, naming the command to fix. Not a BLOCKED sub-task: nothing has been spawned yet, and inventing a sub-task to carry a phase-level failure puts a fake entry in the state that every later count then reads. Because without a baseline the QA diff cannot tell the client's red from ours, which is the entire point of the phase. Parse the runner's output strictly enough to reject its own header lines. A directory name is not a baseline: the whole purpose is to tell, at QA, which red is the client's and which is ours, and `["tests"]` cannot answer that. Nothing in it is fixed and nothing in it blocks the run, but a test that was green at the start and is red at the end is a regression the harness caused. This is the only coverage of code outside the map, which is where legacy breaks.
 - For every zone in the code map, write regression tests in `product/tests/` that pin current behaviour. Backend: unit/integration on existing endpoints and services. Frontend: Playwright on existing flows in the touched screens.
 - Run them on the untouched code. A test that fails here was written wrong, and the test-writer fixes it **in this phase only**.
 - **Prove the net is not vacuous.** For each zone, break the behaviour the test pins (change a return value, a status code, a rendered field), confirm at least one test goes red, restore. A zone where nothing goes red has no net, and the test-writer rewrites it before the phase can exit. A test suite that cannot fail proves nothing, and an agent writing its own tests produces those by default.
@@ -378,6 +396,17 @@ Rules with no counter behind them are a wish. The whole reason for v2 is that a 
 - `product/cost-log.md` keeps one line per completed feature: slug, total tokens, wall time, sub-task count, blocked count. Append-only, and the only file in the product layer that is allowed to be a log.
 - The retro compares this run against the last three. A phase whose share grew without the feature growing is a friction to name.
 - A run that exceeds `budget.tokens_per_feature` from the config does not stop. It flags the overrun in the report and the retro treats it as a defect in the harness, not in the feature.
+
+### 6.3 Model and effort per role
+
+The model an agent runs on and the reasoning effort it runs at are config, not script. `agents:` in `client.config.yaml` holds one entry per role — `planner`, `test-writer`, `worker`, `reviewer`, `qa`, `retro` and `io`, the last covering every mechanical step that still goes through an agent — and each entry sets `model` and `effort`.
+
+- **Static per workspace.** Nothing picks a model at runtime from the size of a sub-task. A run that chose its own models could not be compared against the run before it, and 6.2 exists to make runs comparable.
+- **`inherit` is a value, not an omission.** It means the session's own model or effort. It is the default for every role except `io`, which defaults to `effort: low`, because those steps run a command and copy its output.
+- **Every spawn passes the pair**, in all three workflows. A role that reads the config in one workflow and not another produces two costs for one role and no way to tell them apart.
+- **What ran is recorded, not what was asked for.** `cost_by_agent` stores the model and the effort read from the agent's own transcript alongside its token counts. Tokens without the model that spent them measure nothing, and a config that was overridden somewhere would otherwise never show up.
+- The retro may propose a change to this block. It is the only tuning channel, and 6.2's per-role numbers are what it argues from.
+
 ## 7. Agents
 
 Agents are defined by **role**, not technology. The catalogue lives in `harness/claude/agents/`:
@@ -514,7 +543,7 @@ All tests live in `product/tests/`. They import the client code by path. Test de
 
 One routine, driven by config:
 
-**Delivery requires something to deliver.** No push, no merge, and `delivered` stays false unless at least one sub-task is done and the branch diff against `base_branch` is non-empty. A run that completed nothing pushed an empty branch, recorded `delivered: true` and reported "done with gaps, open a PR" — a false green produced by counting only *blocked* sub-tasks against success. Skipped counts too: any sub-task not done means the status is `partial` at best, and zero done means `nothing landed`, whatever the reason was.
+**Delivery requires something to deliver.** No push, no merge, and `delivered` stays false unless at least one sub-task is done and the branch diff against `base_branch` is non-empty. A run that completed nothing pushed an empty branch, recorded `delivered: true` and reported "done with gaps, open a PR" — a false green produced by counting only *blocked* sub-tasks against success. Skipped counts too: any sub-task not done means the status is `partial` at best, and zero done means `nothing landed`, whatever the reason was. Four statuses, no others: `done`, `done with gaps`, `partial`, `nothing landed`. A status vocabulary with a gap in it is where a false green hides.
 
 - Create `${branch_prefix}<slug>` from `base_branch` at run start.
 - One commit per validated sub-task (section 9.2).
@@ -609,7 +638,7 @@ A run works overnight on the VPS. A message sitting in a file until Ali next ope
 The one artefact Ali reads every feature. Fixed shape, in this order:
 
 ```
-<feature> — <done | done with gaps | partial>
+<feature> — <done | done with gaps | partial | nothing landed>
 
 What works now.            plain sentences, feature vocabulary, what he can go and try
 What didn't land.          blocked, skipped and still-pending sub-tasks, one line each, in
@@ -702,7 +731,7 @@ Inside the scripts:
 - `agent()` per worker with a `schema` so reports come back structured (status, files, decisions, frictions, needs). The script keeps them in variables; the orchestrator context sees only the final summary.
 - The sub-task loop is a JS loop in the script: `for` over ordered sub-tasks, `while attempts < 3`, criteria run by a `qa`-type agent that returns `{pass: boolean, detail: string}`.
 - Use `args` for the slug and for a timestamp (the runtime forbids `Date.now()` in scripts).
-- Model per stage: strongest model for planner and workers, a smaller model for the criteria runner and log checks if it holds up. Make it a config field so the retro can tune it.
+- Model per stage: strongest model for planner and workers, a smaller model for the criteria runner and log checks if it holds up. The config field is `agents:` (6.3); the retro tunes it from the per-role numbers.
 - Keep `workflowSizeGuideline` at `medium`; workers are sequential by dependency, parallel only for independent sub-tasks (cap at 4 concurrent to protect ports and CPU).
 
 Scripts are pure orchestration. All filesystem and shell work happens inside agents.
@@ -738,6 +767,7 @@ Two files the harness maintains so a conversation about the harness can start wi
 - Reviewer as separate agent vs second prompt to the same worker. v1: separate agent (cleaner adversarial stance, costs one extra spawn).
 - **Cost is scoped to the run, not to the session folder.** Two dry runs of the same feature shared a session directory and the cost log summed both, reporting 15.4M tokens for a run that spent 6.3M. A budget check reading that number fires on the wrong run and the retro compares against a median built from double-counted history.
 - **A friction records the error that caused it.** The runtime-refusal path fired ten times and wrote frictions with no error text; the cause sat in the session log instead. A friction whose message is only that something was refused tells the retro nothing it can act on.
+- **The mechanical steps are the expensive ones.** In run 2 the io agents spent 3.26M of the build's 5.67M input tokens, roughly 105k each, against 1.07M for the test-writer. Steps that parse, render, freeze or decide by rule do not need a model at all, and where they still run through one they are the first place to cut effort. Measure per role before choosing a model per role: the intuition that the thinking agents cost the most is wrong here by a factor of three.
 - **Measure input tokens, not just output.** The dry run spent 1.74M input tokens against 27k output on a single agent. A cost log built from output deltas measures the cheap half and reports a run that burned a window as nearly free, which makes pillar four unenforceable.
 - Criteria runner model. v1: session model; try a smaller one in a later feature.
 - Visual region mapping: hand-made regions file vs derived from Figma node tree. v1: hand-made, exported with the design.
