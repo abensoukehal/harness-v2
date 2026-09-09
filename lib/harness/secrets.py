@@ -26,7 +26,9 @@ def load_env_file(path):
 
 class Scrubber:
     def __init__(self, secrets):
-        pairs = [(v, k) for k, v in secrets.items() if len(v) >= FLOOR]
+        # An empty value substitutes at every token boundary and shreds the line; the floor itself is enforced
+        # once, where the secrets are loaded, and never again here.
+        pairs = [(v, k) for k, v in secrets.items() if v]
         self.pairs = sorted(pairs, key=lambda p: -len(p[0]))
 
     def scrub(self, text):

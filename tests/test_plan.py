@@ -93,6 +93,7 @@ class Plan(unittest.TestCase):
             (PLAN.replace("## st-02 · The", "## st-02 - The"), "line 14: sub-task heading must read"),
             (PLAN.replace("files: repos/web/orders.js", "owner: web"), "line 16: unknown field 'owner'"),
             (PLAN.replace("- log api present", "- log cache present"), "line 22: log criterion names unknown stack 'cache'"),
+            (PLAN.replace("depends_on: st-01\n", "depends_on: st-02\n"), "line 14: dependency cycle: st-02 > st-02"),
         ]
         for text, expected in cases:
             done = plan(self.ws, text)

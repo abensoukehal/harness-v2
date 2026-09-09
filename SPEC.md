@@ -758,6 +758,8 @@ Every guard the retro adds or repairs carries a test that drives an input reachi
 
 The same question applies to guards nobody is changing: what input reaches this branch, and does a test drive that input? A guard whose condition no input can produce passes its test, reads as coverage, and protects nothing. The plan parse refused a dependency cycle while requiring every dependency to name an earlier sub-task, so no plan could ever hold one. Where the answer is that no input can reach it, the guard is either made reachable or removed; a refusal that cannot fire is not a safety rule.
 
+A workflow script is held to the same rule. Every branch a script takes on its own — each refusal, the retry policy, the worker and reviewer outcomes, the run's status — lives in a pure block between `/* decisions:start */` and `/* decisions:end */`, and the test suite lifts that block and calls each function with the input that trips it and the input that does not. Asserting the `throw` is present in the source is presence, not condition: it passes whether or not any run can reach it. A decision lifted with no test that calls it is refused by the suite.
+
 ## 15. Claude Code implementation mapping
 
 Use native primitives. Do not build a custom orchestrator in a shell script when Claude Code already has one.

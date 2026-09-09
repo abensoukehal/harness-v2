@@ -113,8 +113,6 @@ def parse(text, cfg, slug=None):
         i, deps = st["depends_on"]
         deps = [] if deps == "none" else [d.strip() for d in deps.split(",") if d.strip()]
         for d in deps:
-            if d == st["id"]:
-                fail(i, "a sub-task cannot depend on itself")
             if d not in ids:
                 fail(i, "depends on %r which is not a sub-task in this plan" % d)
         i, budget = st["line_budget"]

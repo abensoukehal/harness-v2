@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from helpers import MONO_CONFIG, TAIL, env_workspace, run
-from harness.config import load_state, save_state
+from harness.config import load_state, save_state, state_path
 
 ASK = {"where": "The export button is on the orders screen.", "stuck": "Two formats could apply and the spec names neither.",
        "tried": ["Both formats"], "question": "Which format should the export use?",
@@ -53,6 +53,15 @@ class NextRound(unittest.TestCase):
                                     cost={"tokens_in": 0, "tokens_out": 1, "duration_s": 1, "lines_added": 1})
         save_state(self.ws, "hello", state)
         self.assertEqual(self.next(), {"ready": [], "skipped": [], "pending": 0})
+
+    def test_a_cycle_in_the_state_is_refused_before_the_round(self):
+        """plan.md cannot carry a cycle, but a resume or a state.json edited by hand can (14.7)."""
+        state = load_state(self.ws, "hello")
+        state["subtasks"] = [st("st-01", "api", "svc", depends_on=["st-02"]), st("st-02", "web", "web", depends_on=["st-01"])]
+        state_path(self.ws, "hello").write_text(json.dumps(state, indent=2) + "\n")
+        done = run("next", "hello", ws=self.ws)
+        self.assertEqual(done.returncode, 1, done.stdout)
+        self.assertIn("depends_on cycle: st-01 > st-02 > st-01", done.stderr)
 
     def test_needs_parks_the_subtask_and_the_others_run(self):
         self.set_subtasks([

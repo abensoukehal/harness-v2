@@ -7,6 +7,15 @@ from pathlib import Path
 from helpers import ROOT
 
 SCRIPTS = sorted((ROOT / "claude" / "workflows").glob("*.js"))
+
+
+def decisions_block(path):
+    """The pure-function block each script lifts its branches into, between its two markers."""
+    parts = path.read_text().split("/* decisions:start */")
+    assert len(parts) == 2, "%s has no decisions block" % path.name
+    return parts[1].split("/* decisions:end */")[0]
+
+
 BANNED = [r"Date\.now", r"Math\.random", r"new Date\(\)", r"\brequire\(", r"^\s*import\s", r"\bfs\.", r"process\."]
 
 
@@ -84,18 +93,31 @@ class Workflows(unittest.TestCase):
             self.assertNotIn("workspace root. ", code, p.name)
 
     def test_a_runtime_refusal_is_retried_once_then_a_friction(self):
+        """The retry policy is one lifted function; workflow-decisions.test.js drives both of its refusals."""
         for p in SCRIPTS:
             text = p.read_text()
-            self.assertIn("const spawn = async (prompt, opts) => {\n  for (let i = 0; i < 2; i++) {\n    try {\n      const r = await agent(prompt, opts)", text, p.name)
-            self.assertIn("· runtime`", text, p.name)
-            after = text.split("const RUNTIME", 1)[1]
+            self.assertIn("const retrying = async (call, label, note) => {", decisions_block(p), p.name)
+            self.assertIn("const r = await retrying(() => agent(prompt, opts), opts.label, log)", text, p.name)
+            self.assertIn("refused to start it twice: ${refusal} · runtime", text, "%s: the friction carries the runtime's reason" % p.name)
+            after = text.split("const spawn = async (prompt, opts)", 1)[1]
             self.assertNotIn("await agent(", after, "%s: every spawn after the helper goes through it" % p.name)
             self.assertGreaterEqual(after.count("await spawn("), 2, p.name)
         build = (ROOT / "claude/workflows/harness-build.js").read_text()
         self.assertIn("outcome = { status: 'skipped', reason: 'runtime' }", build)
-        self.assertIn("outcome.reason === 'runtime' ? byId()[id].attempts", build, "a refusal spends no attempt")
+        self.assertIn("attempts: attemptsOf(worker, outcome, byId()[id].attempts)", build, "a refusal spends no attempt")
+
+    def test_every_lifted_decision_is_driven_by_a_test(self):
+        """14.7: a branch asserted only as text in the script passes whether or not any input reaches it."""
+        driven = (ROOT / "tests/workflow-decisions.test.js").read_text()
         for p in SCRIPTS:
-            self.assertIn("refused to start it twice: ${refusal} · runtime", p.read_text(), "%s: the friction carries the runtime's reason" % p.name)
+            block = decisions_block(p)
+            names = re.findall(r"^const (\w+) =", block, re.M)
+            self.assertGreaterEqual(len(names), 5, p.name)
+            for name in names:
+                self.assertRegex(driven, r"\b%s\(" % name, "%s: %s is lifted but nothing calls it" % (p.name, name))
+            body = p.read_text().split("/* decisions:end */", 1)[1]
+            for name in names:
+                self.assertRegex(body, r"\b%s\b" % name, "%s: %s is lifted and then unused" % (p.name, name))
 
     def test_nothing_landed_skips_qa_and_delivery(self):
         build = (ROOT / "claude/workflows/harness-build.js").read_text()
@@ -104,7 +126,7 @@ class Workflows(unittest.TestCase):
         self.assertIn("!landed ? 'nothing landed'", build)
         self.assertNotIn("result_schema", build, "the worker schema is inline, in the dialect agent() accepts")
         self.assertNotIn("$schema", build)
-        gate = build.index("if (!state.subtasks.some((s) => s.status === 'done'))")
+        gate = build.index("if (!landedCount(state))")
         self.assertLess(gate, build.index("phase('QA')"))
         self.assertLess(gate, build.index("await update({ delivered: false })"))
         self.assertLess(build.index("QA and delivery skipped"), build.index("phase('QA')"))

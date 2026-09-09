@@ -107,6 +107,7 @@ rejects("state", "two-stack/state.json", [
   ["duplicate sub-task id", (s) => (s.subtasks[2].id = "st-01"), /^\/subtasks\/2\/id$/],
   ["sub-task id malformed", (s) => (s.subtasks[2].id = "task-3"), /^\/subtasks\/2\/id$/],
   ["depends_on unknown sub-task", (s) => (s.subtasks[2].depends_on = ["st-09"]), /^\/subtasks\/2\/depends_on\/0$/],
+  ["depends_on cycle", (s) => (s.subtasks[0].depends_on = ["st-03"]), /^\/subtasks$/],
   ["unknown sub-task key", (s) => (s.subtasks[2].notes = "x"), /^\/subtasks\/2\/notes$/],
   ["criterion kind manual", (s) => (s.subtasks[2].exit_criteria[0].kind = "manual"), /^\/subtasks\/2\/exit_criteria\/0\/kind$/],
   ["http criterion without expect_status", (s) => delete s.subtasks[0].exit_criteria[1].expect_status, /^\/subtasks\/0\/exit_criteria\/1\/expect_status$/],
