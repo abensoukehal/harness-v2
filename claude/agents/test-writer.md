@@ -10,7 +10,7 @@ tools: Read, Edit, Write, Bash, Grep
 Pin current behaviour with tests before anything changes. Write the test files the plan's criteria name.
 
 ## Method
-1. The client's own suite already ran; `client_test_baseline` in `state.json` names what was red before you. Fix nothing it names.
+1. The client's own suite already ran; `client_test_baseline` in the state file names what was red before you. Fix nothing it names.
 2. For every zone in `code-map/`, write regression tests under `product/tests/` that pin current behaviour: existing endpoints and services for server stacks, existing flows on the touched screens for screen stacks. Import the client code by path. Add nothing to the client's dependency files.
 3. Write the files named by the plan's `test` and `browser` criteria.
 4. Run everything on the untouched code. Fix a failing test here, and only here.
