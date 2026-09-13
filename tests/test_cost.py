@@ -41,27 +41,35 @@ class Cost(unittest.TestCase):
             agents = state["cost_by_agent"]
             self.assertEqual(sorted(agents), ["aaa1", "aaa2", "aaa3", "aaa4"], "only agents whose first message names the feature and this workspace")
             self.assertEqual(agents["aaa1"], {"role": "io", "run": "wf_1", "model": "claude-opus-5", "effort": "low",
-                                              "tokens_in": 104034, "tokens_out": 47, "turns": 2, "duration_s": 20})
+                                              "tokens_in": 104034, "tokens_distinct": 53034, "tokens_out": 47, "turns": 2, "duration_s": 20})
             self.assertEqual(agents["aaa2"]["role"], "planner")
             self.assertEqual(agents["aaa2"]["tokens_in"], 200015)
+            # aaa1 and aaa2 each re-read on their second turn what their first turn established: the two numbers part.
+            self.assertEqual(agents["aaa2"]["tokens_distinct"], 100015)
+            for aid in ["aaa1", "aaa2"]:
+                self.assertLess(agents[aid]["tokens_distinct"], agents[aid]["tokens_in"], aid)
+            # A one-turn agent has nothing to re-read, so the two agree and the pair stays readable.
+            self.assertEqual(agents["aaa4"]["tokens_distinct"], agents["aaa4"]["tokens_in"])
             self.assertEqual((agents["aaa3"]["subtask"], agents["aaa4"]["subtask"]), ("st-01", "st-01"))
             cost = state["subtasks"][0]["cost"]
             self.assertEqual((cost["tokens_in"], cost["tokens_out"], cost["lines_added"]), (220002, 3040, 12))
             self.assertEqual(cost["duration_s"], 20, "from the agents' own spans when the loop recorded none")
             self.assertEqual(state["wall_time_s"], 190, "first agent start to last agent end inside the run")
-            self.assertIn("planner: 1 agents, 200k in, 2k out (claude-opus-5/low)", done.stdout,
+            self.assertIn("planner: 1 agents, 200k in (100k distinct), 2k out (claude-opus-5/low)", done.stdout,
                           "the pair that spent the tokens, read from the transcript (6.3)")
-            self.assertIn("total: 4 agents over 1 run, 524k in, 5k out, 190 s wall", done.stdout)
+            self.assertIn("total: 4 agents over 1 run, 524k in (373k distinct), 5k out, 190 s wall", done.stdout)
             self.assertNotIn("timestamp", json.dumps(state))
             again = run("cost", "hello", "--transcripts", wf, ws=ws)
             self.assertEqual(again.returncode, 0, again.stderr)
             self.assertEqual(len(load_state(ws, "hello")["cost_by_agent"]), 4, "a second pass overwrites, never doubles")
             report = run("report", "hello", ws=ws).stdout
-            self.assertIn("529k tokens, 190 s wall time, 1 sub-tasks, 1 attempts, 0 blocked.", report)
+            self.assertIn("529k tokens (378k distinct), 190 s wall time, 1 sub-tasks, 1 attempts, 0 blocked.", report)
             self.assertIn("By role: io: 2 agents", report)
-            self.assertIn("By role: io: 2 agents, 204k in, 87 out (claude-opus-5/low); planner: 1 agents, 200k in, 2k out (claude-opus-5/low); "
-                          "worker: 1 agents, 120k in, 3k out (claude-opus-5/low).", report)
+            self.assertIn("By role: io: 2 agents, 204k in (153k distinct), 87 out (claude-opus-5/low); "
+                          "planner: 1 agents, 200k in (100k distinct), 2k out (claude-opus-5/low); "
+                          "worker: 1 agents, 120k in (120k distinct), 3k out (claude-opus-5/low).", report)
             self.assertIn("hello | 529", (ws / "product/cost-log.md").read_text())
+            self.assertRegex((ws / "product/cost-log.md").read_text(), r"hello \| 529\d+ \| 378\d+ \| 190 \| 1 \| 0")
             missing = run("cost", "hello", "--transcripts", Path(d) / "nowhere", ws=ws)
             self.assertEqual(missing.returncode, 0, "a missing directory holds no agents")
 

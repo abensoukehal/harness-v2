@@ -72,6 +72,8 @@ class Workflows(unittest.TestCase):
             text = path.read_text()
             for opts in re.findall(r"\{[^{}]*\bagentType:[^{}]*\}", text):
                 role = re.search(r"agentType: '([a-z-]+)'", opts).group(1)
+                if "effort: 'low'" in opts:
+                    continue  # the spawns that run before the config can be read; the line below checks their marker
                 self.assertIn("...A('%s')" % role, opts, "%s: %s spawns without its configured pair" % (path.name, role))
             # The io steps read theirs too. Only the spawns that run before the config can be read spell the default out.
             for line in [l for l in text.splitlines() if "effort: 'low'" in l]:
@@ -106,6 +108,36 @@ class Workflows(unittest.TestCase):
         self.assertIn("outcome = { status: 'skipped', reason: 'runtime' }", build)
         self.assertIn("attempts: attemptsOf(worker, outcome, byId()[id].attempts)", build, "a refusal spends no attempt")
 
+    def test_commands_with_no_agent_between_them_share_one_spawn(self):
+        """An io spawn carries ~52k of context whatever it is asked (6.2), so the count is the only lever there is."""
+        build = (ROOT / "claude/workflows/harness-build.js").read_text()
+        self.assertNotIn("const io = (", build, "no single-command io helper survives the batch")
+        batches = []
+        for start in [m.end() for m in re.finditer(r"runAll\(", build)]:
+            depth, i = 0, start
+            while i < len(build):
+                if build[i] in "([{":
+                    depth += 1
+                elif build[i] in ")]}":
+                    if depth == 0:
+                        break
+                    depth -= 1
+                i += 1
+            call = build[start:i]
+            batches.append(re.findall(r"(?:step|setState|getState)\('([a-z-]+)'|\b(brief)\(", call))
+        named = [[a or "briefing" for a, b in group] for group in batches]
+        for want in [["net-check", "plan-in", "environment", "baseline", "state"],  # the launch, either branch
+                     ["net-freeze", "phase"],
+                     ["running", "briefing"],
+                     ["restart", "briefing"],
+                     ["state", "phase"],                                            # the build read and the QA phase
+                     ["state", "phase", "push"],                                    # delivery, the push allowed to fail
+                     ["phase", "cost", "report", "notify"]]:
+            self.assertIn(want, named, "these commands have no agent between them and must share one spawn")
+        for role in ["io"]:
+            for p in SCRIPTS:
+                self.assertIn("agentType: '%s'" % role, p.read_text(), "%s: the io steps run on the restricted agent" % p.name)
+
     def test_every_lifted_decision_is_driven_by_a_test(self):
         """14.7: a branch asserted only as text in the script passes whether or not any input reaches it."""
         driven = (ROOT / "tests/workflow-decisions.test.js").read_text()
@@ -128,14 +160,18 @@ class Workflows(unittest.TestCase):
         self.assertNotIn("$schema", build)
         gate = build.index("if (!landedCount(state))")
         self.assertLess(gate, build.index("phase('QA')"))
-        self.assertLess(gate, build.index("await update({ delivered: false })"))
+        self.assertLess(gate, build.index("setState('undelivered'"))
         self.assertLess(build.index("QA and delivery skipped"), build.index("phase('QA')"))
 
     def test_every_command_in_an_agent_prompt_carries_its_directory(self):
-        """The cwd rule is for agents too (2.2): a command in a prompt names where it runs."""
+        """The cwd rule is for agents too (2.2): a command in a prompt names where it runs, quoted or batched."""
         rooted = ("${WS}", "${TREE_DIR}", "${T(", "${FEATURE}")
         for p in SCRIPTS:
-            for command in re.findall(r"\\`([^`]+)\\`", p.read_text()):
+            text = p.read_text()
+            for command in re.findall(r"\\`([^`]+)\\`", text):
+                self.assertTrue(any(r in command for r in rooted), "%s: %r resolves from the working directory" % (p.name, command))
+            # A batched command is the second argument of step(); it is a command too.
+            for command in re.findall(r"\bstep\('[^']+', `([^`]*)`", text):
                 self.assertTrue(any(r in command for r in rooted), "%s: %r resolves from the working directory" % (p.name, command))
 
     def test_comparable_reaches_the_qa_prompt(self):

@@ -43,7 +43,7 @@ if (!slug) throw new Error('usage: /harness-plan <slug>')
 // The workspace root is passed, never resolved from a working directory (2.2): args.workspace, else HARNESS_WORKSPACE, which
 // harness/bin/link writes into .claude/settings.json so every agent inherits it.
 const ROOT = { type: 'object', properties: { workspace: { type: 'string' } }, required: ['workspace'] }
-const WS = (args && args.workspace) || ((await agent('Run `printf %s "$HARNESS_WORKSPACE"` and return its stdout, exactly, as workspace.', { label: 'workspace root', schema: ROOT, effort: 'low' })) || {}).workspace
+const WS = (args && args.workspace) || ((await agent('Run `printf %s "$HARNESS_WORKSPACE"` and return its stdout, exactly, as workspace.', { label: 'workspace root', schema: ROOT, agentType: 'io', effort: 'low' })) || {}).workspace
 const rootProblem = workspaceRefusal(WS)
 if (rootProblem) throw new Error(rootProblem)
 const BIN = `${WS}/harness/bin`
@@ -86,13 +86,13 @@ const spawn = async (prompt, opts) => {
 }
 const parseStep = () => agent(
   `${IO}Run \`${T('plan')} ${slug}\`. Exit 0: ok true, subtask_count = length of "subtasks" in its JSON. Otherwise ok false, error = its stderr verbatim.`,
-  { label: 'parse plan', schema: RESULT, ...A('io') })
+  { label: 'parse plan', schema: RESULT, agentType: 'io', ...A('io') })
 
 phase('Ingestion')
 const scout = await spawn(
   `${IO}Report on ${FEATURE}: does ${FEATURE}/spec.md exist, does ${FEATURE}/plan.md exist, does ${FEATURE}/state.json exist, and list the files under ${FEATURE}/design. ` +
   `Then run \`${T('agents')}\` and return its JSON verbatim as agents.`,
-  { label: 'scout', schema: SCOUT, effort: 'low' })  // before the config is read: the io default, spelled out once
+  { label: 'scout', schema: SCOUT, agentType: 'io', effort: 'low' })  // before the config is read: the io default, spelled out once
 if (!scout) throw new Error(RUNTIME)
 // Model and effort per role are config, never this script (6.3).
 const A = (role) => agentOpts(scout.agents, role)
@@ -121,7 +121,7 @@ const init = scout.state_exists ? '' : `${T('state')} init ${slug} ${planning.ki
 const patch = JSON.stringify({ kind: planning.kind, phase: 'planning', ingestion: { stacks: ingestion.stacks, zones: ingestion.zones, summary: ingestion.summary } })
 const recorded = await spawn(
   `${IO}Run:\n${init}${T('state')} update ${slug} - <<'EOF'\n${patch}\nEOF\nReturn ok true when every command exits 0, else ok false with the stderr as error.`,
-  { label: 'record state', schema: RESULT, ...A('io') })
+  { label: 'record state', schema: RESULT, agentType: 'io', ...A('io') })
 const notRecorded = okRefusal('state not recorded', recorded)
 if (notRecorded) throw new Error(notRecorded)
 
@@ -138,10 +138,9 @@ if (malformed) {
 }
 // The plan review is a tool over the parsed plan (13.3): the summary, the three numbers and the graph Ali reads, no model.
 const reviewed = await spawn(
-  `${IO}Run:\n${T('review')} ${slug}\n${T('notify')} ${slug} plan_ready\nReturn ok true when both exit 0, else ok false with stderr as error.`,
-  { label: 'review and notify', schema: RESULT, ...A('io') })
+  `${IO}Run these three commands in order, stopping at the first that exits non-zero:\n${T('review')} ${slug}\n${T('notify')} ${slug} plan_ready\n${T('cost')} ${slug}\nReturn ok true when all three exit 0, else ok false with the failing command and its stderr as error.`,
+  { label: 'review, notify and cost', schema: RESULT, agentType: 'io', ...A('io') })
 const refusedPlan = okRefusal('the plan review refused the plan', reviewed)
 if (refusedPlan) throw new Error(refusedPlan)
-await spawn(`${IO}Run \`${T('cost')} ${slug}\`. Return ok by exit code.`, { label: 'cost', schema: RESULT, ...A('io') })
 log(`plan ready: ${parsed.subtask_count} sub-tasks, ${planning.gap_count} gaps, ${planning.journey_steps} journey steps`)
 return { plan: `${FEATURE}/plan.md`, graph: `${FEATURE}/plan.mmd`, subtasks: parsed.subtask_count, gaps: planning.gap_count, journey_steps: planning.journey_steps }

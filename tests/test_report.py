@@ -53,14 +53,14 @@ class Report(unittest.TestCase):
         for line in ["- Orders export as CSV", "- The export button shows on the orders screen: its checks stayed red after three attempts",
                      "- Done exports are struck through: waits on the export button shows on the orders screen",
                      "- Each row carries a summary: it needs an answer, below", "A. Comma separated (recommended)", "- comma, the common case.", "- a header row and nothing else.",
-                     "150 tokens, 300 s wall time, 4 sub-tasks, 5 attempts, 2 blocked.", "No three earlier runs to compare against.",
+                     "150 tokens (0 distinct), 300 s wall time, 4 sub-tasks, 5 attempts, 2 blocked.", "No three earlier runs to compare against.",
                      "Answer the question above first.", "Open a PR from feature/hello."]:
             self.assertIn(line, text, line)
         for absent in ["repos/", "assert 3 == 2", "st-0"]:
             self.assertNotIn(absent, text.split("Detail:")[0], absent)
         self.assertEqual(text.count("Detail:"), 1)
         log = (self.ws / "product/cost-log.md").read_text()
-        self.assertIn("hello | 150 | 300 | 4 | 2", log)
+        self.assertIn("hello | 150 | 0 | 300 | 4 | 2", log)
         run("report", "hello", ws=self.ws)
         self.assertEqual((self.ws / "product/cost-log.md").read_text().count("hello |"), 1, "cost line appended once")
 

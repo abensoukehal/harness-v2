@@ -1,4 +1,9 @@
-"""Cost from the runtime's own transcripts (6.2): input tokens per agent, not output deltas. One record per agent, keyed by agent id."""
+"""Cost from the runtime's own transcripts (6.2): input tokens per agent, not output deltas. One record per agent, keyed by agent id.
+
+Two numbers, not one. tokens_in sums every turn's input, so an agent's context is counted once per turn it takes;
+tokens_distinct counts it once. The two rank the roles differently — a fifty-turn agent looks expensive under the
+first and cheap under the second — and only the second says where the context is actually going.
+"""
 import json
 import os
 import re
@@ -41,6 +46,7 @@ def record(path, slug, ws):
     role = json.loads(meta.read_text()).get("agentType", "io") if meta.exists() else "io"
     role = ROLES.get(role, role)
     first, tokens_in, tokens_out, turns, start, end = None, 0, 0, 0, None, None
+    distinct = 0
     model, effort = None, None
     for line in path.read_text(errors="replace").splitlines():
         try:
@@ -53,6 +59,11 @@ def record(path, slug, ws):
             u = e["message"].get("usage", {})
             tokens_in += u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0) + u.get("cache_read_input_tokens", 0)
             tokens_out += u.get("output_tokens", 0)
+            # Distinct: what this agent was handed once. The first turn's cache read is its prefix; every later turn
+            # re-reads what the turns before it already established, and that read is not new context.
+            distinct += u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0)
+            if not turns:
+                distinct += u.get("cache_read_input_tokens", 0)
             turns += 1
             # The pair that spent these tokens, read from the transcript: what ran, not what the config asked for (6.3).
             model = e["message"].get("model") or model
@@ -65,7 +76,7 @@ def record(path, slug, ws):
         return None
     # run: which workflow launch this agent belonged to, so a second run of the same feature keeps its own span (6.2).
     out = {"role": role, "run": path.parent.name, "model": model or "unknown", "effort": effort or "inherit",
-           "tokens_in": tokens_in, "tokens_out": tokens_out, "turns": turns,
+           "tokens_in": tokens_in, "tokens_distinct": distinct, "tokens_out": tokens_out, "turns": turns,
            "duration_s": int(seconds(end) - seconds(start)) if start and end else 0}
     m = re.search(r"\bst-[0-9]{2,}\b", first[:400])
     if m:
@@ -108,20 +119,24 @@ def cost(ws, slug, dirs=None, out=sys.stdout):
 
 
 def summary(agents, wall):
+    """Per role: the per-turn total, the distinct context beside it, and the output. Both numbers, always (6.2)."""
     roles = {}
     for a in agents.values():
-        r = roles.setdefault(a["role"], [0, 0, 0, set()])
+        r = roles.setdefault(a["role"], [0, 0, 0, 0, set()])
         r[0] += a["tokens_in"]
-        r[1] += a["tokens_out"]
-        r[2] += 1
+        r[1] += a.get("tokens_distinct", 0)
+        r[2] += a["tokens_out"]
+        r[3] += 1
         if a.get("model"):
-            r[3].add("%s/%s" % (a["model"], a.get("effort", "inherit")))
-    lines = ["%s: %d agents, %s in, %s out%s" % (role, n, k(i), k(o), " (%s)" % ", ".join(sorted(pairs)) if pairs else "")
-             for role, (i, o, n, pairs) in sorted(roles.items(), key=lambda kv: -kv[1][0])]
+            r[4].add("%s/%s" % (a["model"], a.get("effort", "inherit")))
+    lines = ["%s: %d agents, %s in (%s distinct), %s out%s" % (role, n, k(i), k(d), k(o), " (%s)" % ", ".join(sorted(pairs)) if pairs else "")
+             for role, (i, d, o, n, pairs) in sorted(roles.items(), key=lambda kv: -kv[1][0])]
     total_in = sum(a["tokens_in"] for a in agents.values())
+    total_distinct = sum(a.get("tokens_distinct", 0) for a in agents.values())
     total_out = sum(a["tokens_out"] for a in agents.values())
     runs = len({a.get("run") for a in agents.values() if a.get("run")})
-    lines.append("total: %d agents over %d run%s, %s in, %s out, %d s wall" % (len(agents), runs, "" if runs == 1 else "s", k(total_in), k(total_out), wall))
+    lines.append("total: %d agents over %d run%s, %s in (%s distinct), %s out, %d s wall"
+                 % (len(agents), runs, "" if runs == 1 else "s", k(total_in), k(total_distinct), k(total_out), wall))
     return lines
 
 

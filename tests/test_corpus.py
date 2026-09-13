@@ -36,9 +36,14 @@ class Corpus(unittest.TestCase):
         self.assertNotIn("agentType", build, "the code around the prose is not corpus")
         self.assertEqual(prompt_text("const x = 'object'\nconst y = `a ${b} c`\n"), "a  c",
                          "schema keywords fall under the length; an interpolation is not prose")
+        # A close quote pairs with its own open quote, never with the next one: the code between two labels is code.
+        self.assertEqual(prompt_text("{ label: 'workspace root', schema: ROOT, agentType: 'io' }"), "")
+        self.assertEqual(prompt_text("// a comment that is plainly long enough to be a sentence\n"), "")
+        self.assertEqual(prompt_text("const s = 'a sentence long enough to count as prose'"),
+                         "a sentence long enough to count as prose")
 
     def test_all_roles_present(self):
-        self.assertEqual([p.stem for p in AGENTS], ["planner", "qa", "retro", "reviewer", "test-writer", "worker"])
+        self.assertEqual([p.stem for p in AGENTS], ["io", "planner", "qa", "retro", "reviewer", "test-writer", "worker"])
         self.assertEqual([p.parent.name for p in SKILLS], ["commit-hygiene", "communicate", "criteria-runner", "reduce",
                                                            "retro", "visual-diff"])
 

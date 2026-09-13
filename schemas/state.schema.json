@@ -188,6 +188,10 @@
           "tokens_in": {
             "$ref": "#/$defs/count"
           },
+          "tokens_distinct": {
+            "$ref": "#/$defs/count",
+            "description": "Context counted once, not once per turn (6.2)."
+          },
           "tokens_out": {
             "$ref": "#/$defs/count"
           },

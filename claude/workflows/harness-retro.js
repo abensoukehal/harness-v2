@@ -43,7 +43,7 @@ if (!slug) throw new Error('usage: /harness-retro <slug>')
 // The workspace root is passed, never resolved from a working directory (2.2): args.workspace, else HARNESS_WORKSPACE, which
 // harness/bin/link writes into .claude/settings.json so every agent inherits it.
 const ROOT = { type: 'object', properties: { workspace: { type: 'string' } }, required: ['workspace'] }
-const WS = (args && args.workspace) || ((await agent('Run `printf %s "$HARNESS_WORKSPACE"` and return its stdout, exactly, as workspace.', { label: 'workspace root', schema: ROOT, effort: 'low' })) || {}).workspace
+const WS = (args && args.workspace) || ((await agent('Run `printf %s "$HARNESS_WORKSPACE"` and return its stdout, exactly, as workspace.', { label: 'workspace root', schema: ROOT, agentType: 'io', effort: 'low' })) || {}).workspace
 const rootProblem = workspaceRefusal(WS)
 if (rootProblem) throw new Error(rootProblem)
 const BIN = `${WS}/harness/bin`
@@ -78,7 +78,7 @@ phase('Retro')
 // The retro edits its own clone of the engine (14.5); the workspace's harness/ stays at the pin.
 const made = await spawn(`Run \`${T('retro-tree')} ${slug}\`. Exit 0: ok true, tree = the last line of its stdout. Otherwise ok false, error = stderr verbatim. ` +
   `Then run \`${T('agents')}\` and return its JSON verbatim as agents.`,
-  { label: 'engine clone', schema: TREE, effort: 'low' })  // before the config is read: the io default, spelled out once
+  { label: 'engine clone', schema: TREE, agentType: 'io', effort: 'low' })  // before the config is read: the io default, spelled out once
 const noTree = treeRefusal(made)
 if (noTree) throw new Error(noTree)
 const TREE_DIR = made.tree
@@ -89,7 +89,7 @@ const retro = await spawn(
   `Follow the retro skill on ${FEATURE}/state.json. Return pushed, unpushed, the tag, the files edited, the frictions dropped, the open questions added, and whether a suspected regression was written.`,
   { agentType: 'retro', label: 'retro', schema: RETRO, ...A('retro') })
 if (!retro) {
-  await spawn(`Run:\n${T('state')} update ${slug} - <<'EOF'\n${JSON.stringify({ frictions: [RUNTIME] })}\nEOF`, { label: 'record friction', schema: TREE, ...A('io') })
+  await spawn(`Run:\n${T('state')} update ${slug} - <<'EOF'\n${JSON.stringify({ frictions: [RUNTIME] })}\nEOF`, { label: 'record friction', schema: TREE, agentType: 'io', ...A('io') })
   return { status: 'failed', reason: 'runtime', pushed: false, unpushed: false, edits: [], dropped: [], open_questions: [] }
 }
 log(`retro: ${retro.edits.length} files edited, ${retro.dropped.length} frictions dropped, ${retro.open_questions.length} open questions${retro.unpushed ? ', UNPUSHED' : ''}`)
@@ -100,9 +100,9 @@ const check = await spawn(
   `tests_green when \`${TREE_DIR}/tests/hygiene.sh --harness ${TREE_DIR} --workspace ${WS}\` and \`npm --prefix ${TREE_DIR} test\` both exit 0. ` +
   `clean = \`git -C ${TREE_DIR} status --porcelain\` prints nothing. tag_exists = \`git -C ${TREE_DIR} tag -l retro/${slug}\` prints the tag. ` +
   `report_exists = \`test -f ${FEATURE}/report.md\` exits 0. ` +
-  `harness_at_pin = \`git -C ${WS}/harness rev-parse HEAD\` equals \`cat ${WS}/product/harness.pin\`. detail = the failing lines, ten at most.`,
-  { label: 'verify', schema: CHECK, ...A('io') })
-await spawn(`Run \`${T('cost')} ${slug}\`. Return ok by exit code.`, { label: 'cost', schema: TREE, ...A('io') })
+  `harness_at_pin = \`git -C ${WS}/harness rev-parse HEAD\` equals \`cat ${WS}/product/harness.pin\`. detail = the failing lines, ten at most. ` +
+  `Last, run \`${T('cost')} ${slug}\`; its exit does not change any field above.`,
+  { label: 'verify and cost', schema: CHECK, agentType: 'io', ...A('io') })
 const ok = checkPassed(check, retro.unpushed)
 if (!ok) log(`retro check failed: ${check ? check.detail : 'no result'}`)
 return { status: ok ? 'done' : 'failed', ...retro, check }

@@ -38,11 +38,17 @@ def relative(line, ws):
 
 
 def cost_rows(text):
+    """slug | tokens | distinct | wall | sub-tasks | blocked. A row written before distinct was counted carries five
+    fields and reads as a zero there, so an older log still compares on the numbers it does have (6.2)."""
     rows = []
     for line in text.splitlines()[1:]:
         parts = [p.strip() for p in line.split("|")]
-        if len(parts) == 5 and parts[1].isdigit():
-            rows.append({"slug": parts[0], "tokens": int(parts[1]), "wall": int(parts[2]), "subtasks": int(parts[3]), "blocked": int(parts[4])})
+        if not (len(parts) in (5, 6) and parts[1].isdigit()):
+            continue
+        if len(parts) == 5:
+            parts = parts[:2] + ["0"] + parts[2:]
+        rows.append({"slug": parts[0], "tokens": int(parts[1]), "distinct": int(parts[2]), "wall": int(parts[3]),
+                     "subtasks": int(parts[4]), "blocked": int(parts[5])})
     return rows
 
 
@@ -81,13 +87,17 @@ def build_report(ws, slug):
     agents = state.get("cost_by_agent", {})
     if agents:
         tokens = sum(a["tokens_in"] + a["tokens_out"] for a in agents.values())
+        # Beside it, the context counted once instead of once per turn. The two rank the roles differently (6.2).
+        distinct = sum(a.get("tokens_distinct", 0) + a["tokens_out"] for a in agents.values())
     else:
         tokens = sum(s.get("cost", {}).get("tokens_in", 0) + s.get("cost", {}).get("tokens_out", 0) for s in state["subtasks"])
+        distinct = 0
     attempts = sum(s["attempts"] for s in state["subtasks"])
     wall = state.get("wall_time_s", 0)
     blocked = sum(1 for s in state["subtasks"] if s["status"] == "blocked")
     lines += ["", "What it cost.",
-              "%s tokens, %d s wall time, %d sub-tasks, %d attempts, %d blocked." % (k(tokens), wall, len(state["subtasks"]), attempts, blocked)]
+              "%s tokens (%s distinct), %d s wall time, %d sub-tasks, %d attempts, %d blocked."
+              % (k(tokens), k(distinct), wall, len(state["subtasks"]), attempts, blocked)]
     if agents:
         lines.append("By role: " + "; ".join(summary(agents, wall)[:-1]) + ".")
     log = ws / "product" / "cost-log.md"
@@ -116,5 +126,5 @@ def build_report(ws, slug):
     (folder / "report.md").write_text(text)
     if log.exists() and slug not in {r["slug"] for r in cost_rows(log.read_text())}:
         with open(log, "a") as f:
-            f.write("%s | %d | %d | %d | %d\n" % (slug, tokens, wall, len(state["subtasks"]), blocked))
+            f.write("%s | %d | %d | %d | %d | %d\n" % (slug, tokens, distinct, wall, len(state["subtasks"]), blocked))
     return text

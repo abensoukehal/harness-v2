@@ -396,8 +396,9 @@ The rules from sections 20.2 and 20.3 apply to them, plus:
 Rules with no counter behind them are a wish. The whole reason for v2 is that a feature costs two to three five-hour windows, so the cost is a tracked number, not an impression.
 
 - Per sub-task, `state.json` records: `tokens_in`, `tokens_out`, `attempts`, `duration_s`, `lines_added`.
+- **Two token numbers, never one.** `tokens_in` sums every turn's input, so an agent's context is counted once per turn it takes; `tokens_distinct` counts it once. They rank the roles differently, and the ranking is the whole point: a fifty-turn agent is the largest number under the first and a small one under the second. Where the context is actually going is what the second says, and that is the number to work from.
 - Per run, the end report (section 13.2) totals them and breaks them down by phase and by agent role.
-- `product/cost-log.md` keeps one line per completed feature: slug, total tokens, wall time, sub-task count, blocked count. Append-only. It and `product/frictions.md` (14.3) are the only files in the product layer that accumulate rows.
+- `product/cost-log.md` keeps one line per completed feature: slug, total tokens, distinct context, wall time, sub-task count, blocked count. Append-only. It and `product/frictions.md` (14.3) are the only files in the product layer that accumulate rows.
 - The retro compares this run against the last three. A phase whose share grew without the feature growing is a friction to name.
 - **The budget follows the plan, not the last run.** `budget.tokens_per_feature` is what a run costs before any sub-task work — planning, the safety net, QA, delivery — and `budget.tokens_per_subtask` is the rate per sub-task in the plan. The budget for a run is the first plus the second times the plan's sub-task count. Both are set from a measured run, never invented: a flat number taken from a two-sub-task run passes every larger plan, and a number below what the engine actually spends flags every run. Either way the flag measures nothing.
 - The overrun is counted once per run, over the run's own total. A per-sub-task check reports a feature that came in under budget as a string of overruns.
@@ -411,6 +412,9 @@ The model an agent runs on and the reasoning effort it runs at are config, not s
 - **`inherit` is a value, not an omission.** It means the session's own model or effort. It is the default for every role except `io`, which defaults to `effort: low`, because those steps run a command and copy its output.
 - **Every spawn passes the pair**, in all three workflows. A role that reads the config in one workflow and not another produces two costs for one role and no way to tell them apart.
 - **What ran is recorded, not what was asked for.** `cost_by_agent` stores the model and the effort read from the agent's own transcript alongside its token counts. Tokens without the model that spent them measure nothing, and a config that was overridden somewhere would otherwise never show up.
+- **Neither setting moves an io step.** An io agent runs one command and copies the output, so its cost is the context a spawn carries, not the thinking it does: measured at ~52,000 tokens whatever it is asked, against ~150 for the prompt. The two levers there are the number of spawns and what a spawn is handed by the runtime, and `model` and `effort` are neither.
+- **`io` is an agent with tools, not the default subagent.** A spawn with no `agentType` loads the whole skill catalogue, the deferred tool catalogue and the MCP instruction blocks — measured at ~43,500 tokens per spawn that a `Bash` step never reads. `claude/agents/io.md` declares `tools: Bash`, and every mechanical spawn in all three workflows names it.
+- Commands with no agent between them share one spawn. A batch returns one entry per command and the script names the one that refused; a batch whose failure is ambiguous costs more than the spawn it saved.
 - The retro may propose a change to this block. It is the only tuning channel, and 6.2's per-role numbers are what it argues from.
 
 ## 7. Agents
@@ -781,7 +785,7 @@ Inside the scripts:
 - Model per stage: strongest model for planner and workers, a smaller model for the criteria runner and log checks if it holds up. The config field is `agents:` (6.3); the retro tunes it from the per-role numbers.
 - Keep `workflowSizeGuideline` at `medium`; workers are sequential by dependency, parallel only for independent sub-tasks (cap at 4 concurrent to protect ports and CPU).
 
-Scripts are pure orchestration. All filesystem and shell work happens inside agents.
+Scripts are pure orchestration, and not by choice: the runtime gives a script no `process`, no `require`, no `fetch`, no `import()` — refused at parse — and no code generation from strings, so `new Function` and `eval` cannot reach out either. A script cannot run a command, read a file or open a socket. Every shell step therefore costs a spawn, which is why 6.3 batches them. `tests/test_workflows.py` records the limit rather than imposing it; what that list still earns on its own is catching `Date.now` and `Math.random`, which break resume, at test time instead of mid-run.
 
 Before editing any workflow script, load `/workflow-authoring`.
 

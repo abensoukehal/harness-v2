@@ -36,8 +36,6 @@ const retrying = async (call, label, note) => {
 }
 const clip = (text) => (text || '').split('\n').slice(-10).join('\n').slice(0, 2000)
 const agentOpts = (agents, role) => (agents && agents[role]) || {}
-const toolRefusal = (what, r) => (r && r.ok ? null : `${what}: ${(r && (r.error || r.output)) || 'the runtime returned nothing'}`)
-const stateRefusal = (r) => (r && r.state ? null : 'state could not be read')
 const launchRefusal = (slug, r) => !r ? 'launch agent returned nothing'
   : !r.plan_ok ? `plan.md refused:\n${r.plan_error}`
   : !r.state_exists ? `no state for ${slug}: run /harness-plan ${slug} first`
@@ -48,13 +46,23 @@ const vacuousRefusal = (net) => {
   const zones = (net.zones || []).filter((z) => !z.mutation_red).map((z) => z.zone)
   return zones.length ? `safety net is vacuous for ${zones.join(', ')}: nothing went red under mutation` : null
 }
+// A batch runs several commands under one spawn, so its failure has to name which one (15.1). A command that did
+// not run at all is a refusal too: a batch that silently skipped a step is worse than the spawn it saved.
+const batchRefusal = (what, asked, r, optional = []) => {
+  if (!r || !r.commands) return `${what}: the runtime returned nothing`
+  const bad = r.commands.find((c) => !c.ok && !optional.includes(c.name))
+  if (bad) return `${what}: ${bad.name} refused: ${clip(bad.error || bad.output || 'no output')}`
+  const gone = asked.find((n) => !optional.includes(n) && !r.commands.some((c) => c.name === n && c.ok))
+  return gone ? `${what}: ${gone} did not run` : null
+}
+const resultOf = (r, name) => ((r && r.commands) || []).find((c) => c.name === name) || {}
 const roundRefusal = (round) => (round && round.pending >= 0 ? null : `build loop stopped: ${round && round.error}`)
-const briefingFailed = (brief) => (brief && brief.ok ? null
-  : { status: 'blocked', reason: 'briefing', last_error: clip(brief && brief.error) })
+const briefingFailed = (r) => (resultOf(r, 'briefing').ok ? null
+  : { status: 'blocked', reason: 'briefing', last_error: clip(resultOf(r, 'briefing').error) })
 const restartCapped = (count, max, stack) => (count > max
   ? { status: 'blocked', reason: 'environment', last_error: clip(`restart of ${stack} requested ${count} times`) } : null)
-const restartFailed = (r) => (r && r.ok ? null
-  : { status: 'blocked', reason: 'environment', last_error: clip(r && (r.error || r.output)) })
+const restartFailed = (r) => (resultOf(r, 'restart').ok ? null
+  : { status: 'blocked', reason: 'environment', last_error: clip(resultOf(r, 'restart').error || resultOf(r, 'restart').output) })
 const workerOutcome = (w) => w.status === 'needs' ? { status: 'blocked', reason: 'needs', last_error: clip(w.report), ask: w.ask }
   : w.status === 'failed' ? { status: 'blocked', reason: 'criteria', last_error: clip(w.last_error) }
   : w.status === 'blocked' ? { status: 'blocked', reason: w.reason, last_error: clip(w.report) }
@@ -77,7 +85,7 @@ if (!slug) throw new Error('usage: /harness-build <slug>')
 // The workspace root is passed, never resolved from a working directory (2.2): args.workspace, else HARNESS_WORKSPACE, which
 // harness/bin/link writes into .claude/settings.json so every agent inherits it.
 const ROOT = { type: 'object', properties: { workspace: { type: 'string' } }, required: ['workspace'] }
-const WS = (args && args.workspace) || ((await agent('Run `printf %s "$HARNESS_WORKSPACE"` and return its stdout, exactly, as workspace.', { label: 'workspace root', schema: ROOT, effort: 'low' })) || {}).workspace
+const WS = (args && args.workspace) || ((await agent('Run `printf %s "$HARNESS_WORKSPACE"` and return its stdout, exactly, as workspace.', { label: 'workspace root', schema: ROOT, agentType: 'io', effort: 'low' })) || {}).workspace
 const rootProblem = workspaceRefusal(WS)
 if (rootProblem) throw new Error(rootProblem)
 const BIN = `${WS}/harness/bin`
@@ -87,10 +95,14 @@ const MAX_RESTARTS = 2
 const MAX_PARALLEL = 4
 const IO = `Workspace root: ${WS}. Run the commands exactly as written; they are absolute. Write nothing except what the task says. `
 
-const OK = {
+const RUN = {
   type: 'object',
-  properties: { ok: { type: 'boolean' }, error: { type: 'string' }, output: { type: 'string' }, now: { type: 'integer' } },
-  required: ['ok'],
+  properties: {
+    commands: { type: 'array', items: { type: 'object', properties: {
+      name: { type: 'string' }, ok: { type: 'boolean' }, output: { type: 'string' }, error: { type: 'string' },
+    }, required: ['name', 'ok'] } },
+  },
+  required: ['commands'],
 }
 const LAUNCH = {
   type: 'object',
@@ -155,21 +167,28 @@ const spawn = async (prompt, opts) => {
   RUNTIME = r.friction || ''
   return r.result || null
 }
-const io = (task, opts = {}) => agent(IO + task, { ...A('io'), schema: OK, ...opts })
-const readState = async (phaseName) => {
-  const r = await spawn(`${IO}Run \`${T('state')} get ${slug}\` and return its JSON verbatim as state.`, { label: 'read state', schema: STATE, ...A('io'), phase: phaseName })
-  const problem = stateRefusal(r)
+// One io spawn carries ~52k of context whatever it is asked, so consecutive commands with no agent between them
+// travel together (6.2, 6.3). agentType 'io' is the restricted-tool agent: no skill catalogue, no tool catalogue.
+const step = (name, command, want, optional) => ({ name, command, want, optional: Boolean(optional) })
+const getState = (name) => step(name, `${T('state')} get ${slug}`, 'ok by exit code; output = its JSON verbatim')
+const setState = (name, patch) => step(name, `${T('state')} update ${slug} - <<'EOF'\n${JSON.stringify(patch)}\nEOF`,
+  'ok by exit code; output = the "now" value it prints')
+const runAll = async (label, steps, phaseName) => {
+  const listed = steps.map((s, i) => `${i + 1}. name: ${s.name}\n   run:\n${s.command}\n   return: ${s.want}`).join('\n')
+  const r = await spawn(
+    `${IO}Run these ${steps.length} commands in order, and stop at the first one that exits non-zero.\n${listed}\n` +
+    'Return one entry per command you ran, in order: name exactly as given above, ok by its exit code, output as that ' +
+    'command\'s return line asks for, and error = its stderr verbatim when it did not exit 0. ' +
+    'Report no entry for a command you never reached.',
+    { label, schema: RUN, agentType: 'io', ...A('io'), phase: phaseName })
+  const problem = batchRefusal(label, steps.filter((s) => !s.optional).map((s) => s.name), r, steps.filter((s) => s.optional).map((s) => s.name))
   if (problem) throw new Error(problem)
-  return r.state
+  return r
 }
-const update = async (patch, phaseName) => {
-  const r = await io(`Run:\n${T('state')} update ${slug} - <<'EOF'\n${JSON.stringify(patch)}\nEOF\nExit 0: ok true, now = the "now" value it prints. Otherwise ok false, error = stderr verbatim.`, { label: 'update state', phase: phaseName })
-  const problem = toolRefusal('state update refused', r)
-  if (problem) throw new Error(problem)
-  return r.now
-}
+const brief = (id) => step('briefing', `${T('briefing')} ${slug} ${id}`, 'ok by exit code; output = its stdout verbatim', true)
+const stateFrom = (r, name) => JSON.parse(resultOf(r, name).output)
 const refused = async (label, phaseName) => {
-  await update({ frictions: [RUNTIME] }, phaseName)
+  await runAll(`${label} friction`, [setState('friction', { frictions: [RUNTIME] })], phaseName)
   log(`${label}: recorded as a friction, reason runtime`)
 }
 // Launch
@@ -177,7 +196,7 @@ phase('Launch')
 const launch = await spawn(
   `${IO}Run \`${T('plan')} ${slug}\`. Non-zero exit: plan_ok false, plan_error = its stderr verbatim. Exit 0: plan_ok true, plan = its stdout parsed as JSON, verbatim. ` +
   `Then run \`${T('state')} get ${slug}\`: non-zero exit gives state_exists false; otherwise state_exists true and state = its JSON verbatim.`,
-  { label: 'launch', schema: LAUNCH, effort: 'low' })  // before the config is parsed: the io default, spelled out once
+  { label: 'launch', schema: LAUNCH, agentType: 'io', effort: 'low' })  // before the config is parsed: the io default, spelled out once
 const launchProblem = launchRefusal(slug, launch)
 if (launchProblem) throw new Error(launchProblem)
 const plan = launch.plan
@@ -186,19 +205,17 @@ const cfg = plan.config
 const A = (role) => agentOpts(cfg.agents, role)
 let state = launch.state
 const resuming = resumes(state)
-if (resuming) {
-  log(`state holds ${state.subtasks.length} sub-tasks: state wins over plan.md`)
-  const net = await io(`Run \`${T('net')} check ${slug}\`; ok by exit code; output = stdout and stderr.`, { label: 'net check' })
-  const stale = toolRefusal('refusing to start', net)
-  if (stale) throw new Error(stale)
-} else {
-  const subtasks = plan.subtasks.map(({ role, ...rest }) => rest)
-  await update({ kind: plan.kind, subtasks, phase: 'safety_net' })
-}
-const env = await io(`Run \`${T(resuming ? 'resume' : 'up')} ${slug}\`. ok by exit code; output = the last 20 lines of stdout and stderr.`, { label: resuming ? 'resume' : 'environment up' })
-const envProblem = toolRefusal(`environment failed at the ${resuming ? 'resume' : 'up'} step`, env)
-if (envProblem) throw new Error(envProblem)
-state = await readState('Launch')
+if (resuming) log(`state holds ${state.subtasks.length} sub-tasks: state wins over plan.md`)
+const opening = await runAll('launch', [
+  resuming
+    ? step('net-check', `${T('net')} check ${slug}`, 'ok by exit code; output = stdout and stderr')
+    : setState('plan-in', { kind: plan.kind, subtasks: plan.subtasks.map(({ role, ...rest }) => rest), phase: 'safety_net' }),
+  step('environment', `${T(resuming ? 'resume' : 'up')} ${slug}`, 'ok by exit code; output = the last 20 lines of stdout and stderr'),
+  step('baseline', `${T('baseline')} ${slug}`, 'ok by exit code; output = stdout and stderr'),
+  getState('state'),
+], 'Launch')
+log(`client baseline: ${(resultOf(opening, 'baseline').output || '').split('\n').filter(Boolean).join('; ')}`)
+state = stateFrom(opening, 'state')
 const byId = () => Object.fromEntries(state.subtasks.map((s) => [s.id, s]))
 const repoOf = (id) => cfg.stacks[byId()[id].stack].repo
 
@@ -209,10 +226,6 @@ try {
   if (netSkipped(state)) {
     log('every sub-task is done: safety net skipped')
   } else {
-    const base = await io(`Run \`${T('baseline')} ${slug}\`; ok by exit code; output = stdout and stderr.`, { label: 'client baseline' })
-    const baseProblem = toolRefusal('client baseline could not be recorded', base)
-    if (baseProblem) throw new Error(baseProblem)
-    log(`client baseline: ${(base.output || '').split('\n').filter(Boolean).join('; ')}`)
     const net = await spawn(
       `Workspace root: ${WS}. Feature ${slug}. Every path below is absolute; use these, resolve none yourself. ` +
       `Follow your Method on ${FEATURE}. Zones come from ${WS}/product/code-map. Write the net under ${WS}/product/tests. ` +
@@ -221,10 +234,10 @@ try {
     if (!net) { await refused('safety net', 'Safety net'); throw new Error('the runtime refused to start the test-writer twice; nothing to build on') }
     const vacuous = vacuousRefusal(net)
     if (vacuous) throw new Error(vacuous)
-    const frozen = await io(`Run \`${T('net')} freeze ${slug}\`; ok by exit code; output = stdout and stderr.`, { label: 'net freeze' })
-    const freezeProblem = toolRefusal('safety net could not be frozen', frozen)
-    if (freezeProblem) throw new Error(freezeProblem)
-    await update({ phase: 'build' })
+    await runAll('freeze the net', [
+      step('net-freeze', `${T('net')} freeze ${slug}`, 'ok by exit code; output = stdout and stderr'),
+      setState('phase', { phase: 'build' }),
+    ], 'Safety net')
     log(`safety net: ${net.zones.length} zones pinned, baseline recorded, tests frozen`)
   }
 
@@ -233,41 +246,54 @@ try {
   // A restart request from a worker or a reviewer (11.1, 19.1): served, respawned, no attempt spent, two per sub-task.
   const serveRestart = async (id, result, count) => {
     const capped = restartCapped(count, MAX_RESTARTS, result.stack)
-    if (capped) return capped
+    if (capped) return { outcome: capped }
     const flags = (result.reseed ? ' --reseed' : '') + ` --subtask ${id}`
-    const r = await io(`Run \`${T('restart')} ${slug} ${result.stack}${flags}\`; ok by exit code; output = the last 20 lines.`, { label: `restart ${result.stack}`, phase: 'Build' })
-    const failed = restartFailed(r)
-    if (failed) return failed
+    const served = await runAll(`${id} restart ${result.stack}`, [
+      step('restart', `${T('restart')} ${slug} ${result.stack}${flags}`, 'ok by exit code; output = the last 20 lines', true),
+      brief(id),
+    ], 'Build')
+    const outcome = restartFailed(served) || briefingFailed(served)
+    if (outcome) return { outcome }
     log(`${id} restarted ${result.stack}${result.reseed ? ' with reseed' : ''}, respawning`)
-    return true
+    return { briefing: resultOf(served, 'briefing').output }
   }
 
   const runSubtask = async (id) => {
-    const started = await update({ subtasks: [{ id, status: 'running' }] }, 'Build')
     let restarts = 0
+    let started = 0
+    let mission = ''
     let worker = null
     let review = null
     let outcome = { status: 'blocked', reason: 'worker', last_error: '' }
     try {
       while (true) {
-        const brief = await io(`Run \`${T('briefing')} ${slug} ${id}\`; output = its stdout verbatim.`, { label: `${id} briefing`, phase: 'Build' })
-        const noBrief = briefingFailed(brief)
-        if (noBrief) { outcome = noBrief; break }
-        worker = await spawn(brief.output, { agentType: 'worker', label: `${id} worker`, phase: 'Build', schema: WORKER, ...A('worker') })
+        if (!mission) {
+          const begun = await runAll(`${id} start`, [
+            setState('running', { subtasks: [{ id, status: 'running' }] }),
+            brief(id),
+          ], 'Build')
+          started = Number(resultOf(begun, 'running').output) || started
+          const noBrief = briefingFailed(begun)
+          if (noBrief) { outcome = noBrief; break }
+          mission = resultOf(begun, 'briefing').output
+        }
+        worker = await spawn(mission, { agentType: 'worker', label: `${id} worker`, phase: 'Build', schema: WORKER, ...A('worker') })
         if (!worker) { await refused(`${id} worker`, 'Build'); outcome = { status: 'skipped', reason: 'runtime' }; break }
         if (worker.status === 'restart') {
           const served = await serveRestart(id, worker, ++restarts)
-          if (served !== true) { outcome = served; break }
+          if (served.outcome) { outcome = served.outcome; break }
+          mission = served.briefing
           continue
         }
         const stopped = workerOutcome(worker)
         if (stopped) { outcome = stopped; break }
         review = await spawn(
-          `${brief.output}\n\n# Worker report\n${worker.report}\nFiles touched: ${(worker.files || []).join(', ')}`,
+          `${mission}\n\n# Worker report\n${worker.report}\nFiles touched: ${(worker.files || []).join(', ')}`,
           { agentType: 'reviewer', label: `${id} review`, phase: 'Build', schema: REVIEW, ...A('reviewer') })
         if (review && review.status === 'restart') {
           const served = await serveRestart(id, review, ++restarts)
-          if (served !== true) { outcome = served; break }
+          if (served.outcome) { outcome = served.outcome; break }
+          mission = served.briefing
           continue
         }
         if (!review) { await refused(`${id} review`, 'Build'); outcome = { status: 'skipped', reason: 'runtime' }; break }
@@ -281,11 +307,11 @@ try {
     const { lines_added, ...rest } = outcome
     const item = { id, ...rest, attempts: attemptsOf(worker, outcome, byId()[id].attempts) }
     if (outcome.status === 'done') Object.assign(item, { cost: { tokens_in: 0, tokens_out: 0, duration_s: 0, lines_added: outcome.lines_added }, _since: started })
-    await update({
+    await runAll(`${id} result`, [setState('result', {
       subtasks: [item],
       decisions: [...tag(worker && worker.decisions), ...tag(review && review.decisions)],
       frictions: [...tag(worker && worker.frictions), ...tag(review && review.frictions), ...(overBudget(review, lines_added, byId()[id].line_budget) ? [`${id} · over line budget · ${review.justification}`] : [])],
-    }, 'Build')
+    })], 'Build')
     if (outcome.status === 'blocked') summary.blocked.push(`${id}: ${outcome.reason}`)
     if (outcome.status === 'skipped') summary.skipped.push(`${id}: ${outcome.reason}`)
     log(`${id} ${outcome.status}${outcome.commit ? ' ' + outcome.commit.slice(0, 8) : ''}${outcome.reason ? ' (' + outcome.reason + ')' : ''}`)
@@ -294,22 +320,21 @@ try {
   const NEXT = { type: 'object', properties: { ready: strings, skipped: strings, pending: { type: 'integer' }, error: { type: 'string' } }, required: ['ready', 'skipped', 'pending'] }
   while (true) {
     const round = await spawn(`${IO}Run \`${T('next')} ${slug}\` and return its JSON verbatim; on a non-zero exit return ready [], skipped [], pending -1 and stderr as error.`,
-      { label: 'next round', schema: NEXT, ...A('io'), phase: 'Build' })
+      { label: 'next round', schema: NEXT, agentType: 'io', ...A('io'), phase: 'Build' })
     const stopped = roundRefusal(round)
     if (stopped) throw new Error(stopped)
     round.skipped.forEach((id) => { summary.skipped.push(id); log(`${id} skipped: a dependency is blocked or skipped`) })
     if (!round.ready.length) break
     await parallel(round.ready.map((id) => () => runSubtask(id)))
   }
-  state = await readState('Build')
+  state = stateFrom(await runAll('read the build', [getState('state'), setState('phase', { phase: 'qa' })], 'Build'), 'state')
 
   if (!landedCount(state)) {
-    await update({ delivered: false })
+    await runAll('nothing landed', [setState('undelivered', { delivered: false })], 'Build')
     log('nothing landed: QA and delivery skipped')
   } else {
     // QA
     phase('QA')
-    await update({ phase: 'qa' })
     const runQA = () => agent(
       `Workspace root: ${WS}. Feature ${slug}. Every path below is absolute; use these, resolve none yourself. ` +
       `Global QA per your Method: the journey ${FEATURE}/journey.md, the safety net under ${WS}/product/tests, every criterion in ${FEATURE}/state.json, ` +
@@ -328,8 +353,8 @@ try {
         fixes += 1
         const st = byId()[f.subtask]
         if (!st) { log(`fix ${fixes}/${cfg.max_fixes}: ${f.subtask} is not a sub-task, left as a gap`); continue }
-        const brief = await io(`Run \`${T('briefing')} ${slug} ${f.subtask}\`; output = its stdout verbatim.`, { label: `${f.subtask} briefing` })
-        const mission = `${brief && brief.output}\n\n# QA failure to fix\nkind: ${f.kind}\nexpected: ${f.expected || ''}\nobserved: ${f.observed || ''}\n${f.detail}\nFix this failure only.`
+        const briefed = await runAll(`${f.subtask} briefing`, [brief(f.subtask)], 'QA')
+        const mission = `${resultOf(briefed, 'briefing').output}\n\n# QA failure to fix\nkind: ${f.kind}\nexpected: ${f.expected || ''}\nobserved: ${f.observed || ''}\n${f.detail}\nFix this failure only.`
         const w = await spawn(mission, { agentType: 'worker', label: `fix ${f.subtask}`, schema: WORKER, ...A('worker') })
         let r = null
         if (w && w.status === 'done') {
@@ -344,25 +369,30 @@ try {
 
     // Delivery
     phase('Delivery')
-    state = await readState('Delivery')
-    await update({ phase: 'delivery' })
-    // bin/deliver refuses a run with nothing landed or an unchanged branch, and records the refusal itself (10).
-    const delivery = await io(`Run \`${T('deliver')} ${slug}\`; ok by exit code; output = stdout and stderr.`, { label: 'push' })
-    summary.delivered = Boolean(delivery && delivery.ok)
-    if (!summary.delivered) log(`not delivered: ${clip(delivery && (delivery.error || delivery.output))}`)
+    // bin/deliver refuses a run with nothing landed or an unchanged branch, and records the refusal itself (10), so
+    // its exit is read, never thrown on: the batch carries it as the one step allowed to fail.
+    const shipped = await runAll('deliver', [
+      getState('state'),
+      setState('phase', { phase: 'delivery' }),
+      step('push', `${T('deliver')} ${slug}`, 'ok by exit code; output = stdout and stderr', true),
+    ], 'Delivery')
+    state = stateFrom(shipped, 'state')
+    summary.delivered = Boolean(resultOf(shipped, 'push').ok)
+    if (!summary.delivered) log(`not delivered: ${clip(resultOf(shipped, 'push').error || resultOf(shipped, 'push').output)}`)
   }
 } finally {
-  await io(`Run \`${T('cleanup')} ${slug}\`.`, { label: 'cleanup', phase: 'Delivery' })
+  // Its own spawn, on purpose: it runs while the run is unwinding, and an environment left up costs more than a spawn.
+  await runAll('cleanup', [step('cleanup', `${T('cleanup')} ${slug}`, 'ok by exit code')], 'Delivery')
 }
 
-state = await readState('Delivery')
-const wall = state.subtasks.reduce((n, s) => n + ((s.cost && s.cost.duration_s) || 0), 0)
-await update({ phase: 'finished', wall_time_s: wall })
 const landed = landedCount(state)
 const status = runStatus(landed, state.subtasks.length, summary.delivered, summary.gaps.length)
-await io(`Run \`${T('cost')} ${slug}\`; ok by exit code; output = stdout.`, { label: 'cost' })
-const report = await io(`Run \`${T('report')} ${slug}\` and return its full stdout as output; then run \`${T('notify')} ${slug} run_finished\`. ok when the report exits 0.`, { label: 'report' })
-const reportProblem = toolRefusal('report failed', report)
-if (reportProblem) throw new Error(reportProblem)
+// bin/cost writes the wall time from the runs' own spans, so the phase write, the cost and the report are one batch.
+const closing = await runAll('report', [
+  setState('phase', { phase: 'finished' }),
+  step('cost', `${T('cost')} ${slug}`, 'ok by exit code; output = stdout'),
+  step('report', `${T('report')} ${slug}`, 'ok by exit code; output = its full stdout'),
+  step('notify', `${T('notify')} ${slug} run_finished`, 'ok by exit code'),
+], 'Delivery')
 log(`${slug}: ${status}`)
-return { status, report: report.output, blocked: summary.blocked, skipped: summary.skipped, gaps: summary.gaps }
+return { status, report: resultOf(closing, 'report').output, blocked: summary.blocked, skipped: summary.skipped, gaps: summary.gaps }

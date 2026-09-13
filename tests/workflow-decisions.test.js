@@ -67,12 +67,31 @@ test("model and effort come from the config, and only the io role has a default"
   }
 });
 
-test("a tool step is refused by its exit, and the refusal carries what the tool said", () => {
-  assert.equal(build.toolRefusal("net check", { ok: true }), null);
-  assert.equal(build.toolRefusal("net check", { ok: true, error: "warning" }), null);
-  assert.match(build.toolRefusal("net check", { ok: false, error: "product/tests/api/test_x.py changed" }), /net check: product\/tests/);
-  assert.match(build.toolRefusal("net check", { ok: false, output: "on stdout" }), /net check: on stdout/);
-  assert.match(build.toolRefusal("net check", null), /the runtime returned nothing/);
+test("a batch names the command that refused, and the one it never reached", () => {
+  const asked = ["net-check", "environment", "state"];
+  const green = { commands: [{ name: "net-check", ok: true }, { name: "environment", ok: true }, { name: "state", ok: true, output: "{}" }] };
+  assert.equal(build.batchRefusal("launch", asked, green), null);
+
+  // The second of three fails: the batch stops there, and the refusal names that one, not the batch.
+  const middle = { commands: [{ name: "net-check", ok: true }, { name: "environment", ok: false, error: "web never came up" }] };
+  const said = build.batchRefusal("launch", asked, middle);
+  assert.match(said, /^launch: environment refused: web never came up$/);
+  assert.doesNotMatch(said, /net-check|state/, "the commands around it are not blamed");
+
+  // Nothing failed, but a command was skipped: silence there is worse than the spawn the batch saved.
+  const short = { commands: [{ name: "net-check", ok: true }, { name: "environment", ok: true }] };
+  assert.match(build.batchRefusal("launch", asked, short), /^launch: state did not run$/);
+  assert.match(build.batchRefusal("launch", asked, null), /launch: the runtime returned nothing/);
+  assert.match(build.batchRefusal("launch", asked, {}), /the runtime returned nothing/);
+
+  // A step allowed to fail is read, not thrown on: bin/deliver refuses and records that itself.
+  const pushed = { commands: [{ name: "state", ok: true, output: "{}" }, { name: "push", ok: false, error: "branch unchanged" }] };
+  assert.equal(build.batchRefusal("deliver", ["state"], pushed, ["push"]), null);
+  assert.equal(build.resultOf(pushed, "push").ok, false);
+  assert.equal(build.resultOf(pushed, "state").output, "{}");
+  assert.deepEqual(build.resultOf(pushed, "absent"), {}, "a command with no entry reads as empty, never as undefined");
+  assert.deepEqual(build.resultOf(null, "state"), {});
+
   assert.equal(plan.okRefusal("state not recorded", { ok: true }), null);
   assert.match(plan.okRefusal("state not recorded", { ok: false, error: "no state" }), /state not recorded: no state/);
   assert.match(plan.okRefusal("state not recorded", null), /the runtime returned nothing/);
@@ -84,9 +103,6 @@ test("the build launches only on a parsed plan and an existing state", () => {
   assert.equal(build.launchRefusal("hello", null), "launch agent returned nothing");
   assert.match(build.launchRefusal("hello", { plan_ok: false, plan_error: "line 4: unknown stack", state_exists: true }), /plan\.md refused:\nline 4/);
   assert.match(build.launchRefusal("hello", { plan_ok: true, state_exists: false }), /no state for hello: run \/harness-plan hello first/);
-  assert.equal(build.stateRefusal({ state: { subtasks: [] } }), null);
-  assert.equal(build.stateRefusal(null), "state could not be read");
-  assert.equal(build.stateRefusal({}), "state could not be read");
 });
 
 test("state with sub-tasks resumes, and a run whose sub-tasks are all done skips the safety net", () => {
@@ -112,12 +128,18 @@ test("the build loop stops on a refused round and on nothing else", () => {
 });
 
 test("a sub-task that cannot be briefed, restarted or reviewed lands as a blocked outcome, never as a throw", () => {
-  assert.equal(build.briefingFailed({ ok: true, output: "# Briefing" }), null);
-  assert.deepEqual(build.briefingFailed({ ok: false, error: "no such sub-task" }), { status: "blocked", reason: "briefing", last_error: "no such sub-task" });
+  const briefed = { commands: [{ name: "running", ok: true, output: "17" }, { name: "briefing", ok: true, output: "# Mission" }] };
+  assert.equal(build.briefingFailed(briefed), null);
+  assert.deepEqual(build.briefingFailed({ commands: [{ name: "running", ok: true }, { name: "briefing", ok: false, error: "no such sub-task" }] }),
+    { status: "blocked", reason: "briefing", last_error: "no such sub-task" });
+  assert.deepEqual(build.briefingFailed({ commands: [] }), { status: "blocked", reason: "briefing", last_error: "" },
+    "a briefing that never ran is a briefing that failed");
+
   assert.equal(build.restartCapped(2, 2, "api"), null, "the second restart is still served");
   assert.deepEqual(build.restartCapped(3, 2, "api"), { status: "blocked", reason: "environment", last_error: "restart of api requested 3 times" });
-  assert.equal(build.restartFailed({ ok: true }), null);
-  assert.deepEqual(build.restartFailed({ ok: false, output: "health never came up" }), { status: "blocked", reason: "environment", last_error: "health never came up" });
+  assert.equal(build.restartFailed({ commands: [{ name: "restart", ok: true }] }), null);
+  assert.deepEqual(build.restartFailed({ commands: [{ name: "restart", ok: false, output: "health never came up" }] }),
+    { status: "blocked", reason: "environment", last_error: "health never came up" });
 });
 
 test("the worker's status decides the outcome, and only done and restart carry on", () => {

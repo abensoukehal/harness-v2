@@ -30,6 +30,8 @@ planner, test-writer, worker, reviewer, qa, retro. Skills: criteria-runner, visu
 - A guard's test drives an input that reaches the refused branch; a guard no input can reach is made reachable or removed.
 - A workflow script decides nothing inline: its branches sit in the decisions block, and each one is called from a test with both inputs.
 - `hygiene.sh` fails a commit that puts the instruction corpus past 40,000 characters; the corpus counts the markdown and the prompt text inside the workflow scripts.
+- Cost is two numbers: the per-turn total and the distinct context beside it. Both are in `cost_by_agent`, the by-role line and `cost-log.md`.
+- Every mechanical spawn names `agentType: 'io'`, and commands with no agent between them travel in one batch that names which command refused.
 - `harness/` in a workspace runs the pinned commit only; the retro never moves it.
 
 ## Known limits
