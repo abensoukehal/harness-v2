@@ -164,8 +164,8 @@ Validation runs in two passes: schema first, then cross-field checks (paths unde
 
 
 budget:
-  tokens_per_feature: 10300000  # measured, not guessed: what a run costs before its sub-tasks
-  tokens_per_subtask: 1450000   # measured; budget is the pair against the plan's count, overrun is a harness defect, not a stop
+  tokens_per_feature: 3600000   # measured, not guessed: what a run costs before its sub-tasks
+  tokens_per_subtask: 1250000   # measured; budget is the pair against the plan's count, overrun is a harness defect, not a stop
 
 qa:
   max_fixes: 10                 # phase cap; past it, deliver with documented gaps
