@@ -3,9 +3,10 @@ import re
 FLOOR = 8  # a shorter value is not a secret, and substituting it shreds every ordinary line that happens to contain it (9.3)
 
 
-def too_short(secrets):
-    """Keys whose value is under the floor. Setup names them and refuses; it never runs with a scrubber that cannot cover them."""
-    return sorted(k for k, v in secrets.items() if 0 < len(v) < FLOOR)
+def too_short(values, declared):
+    """Declared secret keys whose value is under the floor. A key nobody declared is ordinary config: it is neither
+    scrubbed nor floored, so an env file full of DEBUG=1 and a port number passes."""
+    return sorted(k for k in declared if 0 < len(values.get(k, "")) < FLOOR)
 
 
 def load_env_file(path):

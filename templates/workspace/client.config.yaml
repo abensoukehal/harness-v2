@@ -16,11 +16,12 @@ stacks:
       lint: pnpm lint
       typecheck: pnpm tsc --noEmit
       test: pnpm test
-    env_file: frontend.env
+    # env_files: [.env, .env.local] # each resolved from secrets/frontend/, later entries winning
+    # secrets: [SESSION_SECRET]     # the keys the scrubber covers; every other key in those files is config
     dev_url: http://localhost:${PORT_FRONTEND}
     depends_on: [backend]
-    health:
-      log: "ready on"
+    health:                        # a list: every entry must pass before the stack counts as up
+      - log: "ready on"
     health_timeout_s: 120
   backend:
     repo: backend
@@ -31,13 +32,15 @@ stacks:
       dev: python manage.py runserver 0.0.0.0:${PORT_BACKEND}
       test: pytest
       lint: ruff check .
-    env_file: backend.env
+    # env_files: [.env]
+    # secrets: [DATABASE_URL, DJANGO_SECRET_KEY]
     dev_url: http://localhost:${PORT_BACKEND}
     logs: stdout
     depends_on: [db]
     health:
-      http: http://localhost:${PORT_BACKEND}/healthz
-      expect_status: 200
+      - log: "Starting development server"
+      - http: http://localhost:${PORT_BACKEND}/healthz   # a full URL, not a bare port
+        expect_status: 200
     health_timeout_s: 180
     seed: python manage.py loaddata fixtures/seed.json
   db:
@@ -46,25 +49,24 @@ stacks:
     commands:
       dev: docker compose up -d postgres
     health:
-      tcp: ${PORT_DB}
+      - tcp: ${PORT_DB}
     health_timeout_s: 60
 
 delivery:
   base_branch: develop
   target_branch: develop
   branch_prefix: feature/
-  mode: pr
+  mode: branch                # branch | direct_merge; branch pushes and stops
   commit_author:
     name: Your Name
     email: you@example.com
 
-git:
-  identity_hygiene: strict
-
 notify:
+  # An event is refused at validation until secrets/<chat_id_ref> and secrets/telegram_bot_token both exist,
+  # so put them there first and then name the events. Until then this stays empty.
   telegram:
     chat_id_ref: telegram_chat_id
-  events: [plan_ready, run_finished, needs_answer]
+  events: []
 
 client_tests:
   backend: pytest
@@ -78,12 +80,12 @@ browser_runner:
   frontend: pnpm playwright test
 
 budget:
-  # measured, not guessed, from the archive-items run (run 4): 5.97M tokens across plan and build,
-  # of which 2.46M was attributed to its two sub-tasks. The budget for a run is the first number plus
-  # the second per sub-task in the plan, so a fifteen-sub-task feature is not held to a two-sub-task run.
-  # Rounded up off the measurement, so the run they come from sits just under its own budget.
-  tokens_per_feature: 3600000
-  tokens_per_subtask: 1250000
+  # Deliberately loose for the first run on a real repo: double what the archive-items run (run 4) spent,
+  # 5.97M across plan and build with 2.46M of it attributed to its two sub-tasks. Ingestion scales with the
+  # repo, not the feature, so a legacy codebase can outspend a measured toy before its first sub-task. The
+  # run-1 retro sets the real pair from that run's own measurement.
+  tokens_per_feature: 7200000
+  tokens_per_subtask: 2500000
 
 qa:
   max_fixes: 10
@@ -95,8 +97,6 @@ visual:
 
 design:
   comparable: true            # false for wireframes and block mockups: no visual criterion, recorded as a gap
-
-max_parallel_features: 2
 
 agents:                       # model and effort per role (6.3); static per workspace, inherit = the session's own setting
   planner:     { model: inherit, effort: inherit }

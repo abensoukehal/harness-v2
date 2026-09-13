@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import YAML from "yaml";
 import { load, validate, validateFile } from "../lib/validate.js";
 
 const fixture = (p) => fileURLToPath(new URL(`fixtures/${p}`, import.meta.url));
@@ -28,6 +29,71 @@ function rejects(schema, file, cases) {
   }
 }
 
+// The checks that read secrets/ only run for a config at <workspace>/product/client.config.yaml, so these build one.
+// A declared event with no credentials behind it, and a declared secret that is missing or short, stop the run here
+// rather than at hour two or in a friction nobody can act on.
+function workspace(mutate = () => {}, files = {}) {
+  const ws = mkdtempSync(join(tmpdir(), "harness-ws-"));
+  const cfg = load(fixture("two-stack/client.config.yaml"));
+  mutate(cfg);
+  mkdirSync(join(ws, "product"), { recursive: true });
+  for (const [rel, body] of Object.entries(files)) {
+    const path = join(ws, "secrets", rel);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, body);
+  }
+  const path = join(ws, "product", "client.config.yaml");
+  writeFileSync(path, YAML.stringify(cfg));
+  return validateFile(path);
+}
+
+const FULL = {
+  telegram_chat_id: "4242\n",
+  telegram_bot_token: "bot-token-value\n",
+  "frontend/.env": "SESSION_SECRET=frontend-session-value\n",
+  "frontend/.env.local": "DEBUG=1\n",
+  "backend/.env": "DATABASE_URL=postgres://localhost/app\n",
+};
+const messages = (r) => r.errors.map((e) => `${e.path} ${e.message}`).join("\n");
+
+test("a workspace with every declared secret and credential validates", () => {
+  const r = workspace(() => {}, FULL);
+  assert.deepEqual(r, { ok: true, pass: "cross-field", errors: [] }, messages(r));
+});
+
+test("an env file of ordinary config needs no secrets entry and carries no floor", () => {
+  // DEBUG=1 is one character and nobody declared it: it is configuration, not a secret.
+  const r = workspace(() => {}, { ...FULL, "frontend/.env.local": "DEBUG=1\nTZ=UTC\nPORT=80\n" });
+  assert.deepEqual(r, { ok: true, pass: "cross-field", errors: [] }, messages(r));
+});
+
+test("a declared event with no credentials under secrets/ is refused", () => {
+  const without = { ...FULL };
+  delete without.telegram_bot_token;
+  const r = workspace(() => {}, without);
+  assert.equal(r.ok, false);
+  assert.match(messages(r), /secrets\/telegram_bot_token is missing/);
+  assert.deepEqual(workspace((c) => (c.notify.events = []), without).errors, [], "no event declared, nothing to send");
+});
+
+test("a declared secret that is missing or under the floor is refused", () => {
+  const missing = workspace(() => {}, { ...FULL, "frontend/.env": "OTHER=value\n" });
+  assert.match(messages(missing), /"SESSION_SECRET" is in no file under secrets\/frontend\//);
+  const short = workspace(() => {}, { ...FULL, "frontend/.env": "SESSION_SECRET=abcd\n" });
+  assert.match(messages(short), /"SESSION_SECRET" is 4 characters; under 8/);
+});
+
+test("a later env file wins, so an override can lift a short value over the floor", () => {
+  const r = workspace(() => {}, { ...FULL, "frontend/.env": "SESSION_SECRET=abcd\n", "frontend/.env.local": "SESSION_SECRET=long-enough-value\n" });
+  assert.deepEqual(r.errors, [], messages(r));
+});
+
+test("an env file a stack names but secrets/ does not hold is refused", () => {
+  const without = { ...FULL };
+  delete without["frontend/.env.local"];
+  assert.match(messages(workspace(() => {}, without)), /secrets\/frontend\/\.env\.local is missing/);
+});
+
 rejects("config", "two-stack/client.config.yaml", [
   ["missing client", (c) => delete c.client, /^\/client$/],
   ["client with uppercase", (c) => (c.client = "Acme"), /^\/client$/],
@@ -39,28 +105,34 @@ rejects("config", "two-stack/client.config.yaml", [
   ["stack without health_timeout_s", (c) => delete c.stacks.backend.health_timeout_s, /^\/stacks\/backend\/health_timeout_s$/],
   ["repo null with a path", (c) => (c.stacks.frontend.repo = null), /^\/stacks\/frontend\/path$/],
   ["path null with a repo", (c) => (c.stacks.frontend.path = null), /^\/stacks\/frontend\/path$/],
-  ["health tcp next to log", (c) => (c.stacks.db.health = { tcp: "${PORT_DB}", log: "x" }), /^\/stacks\/db\/health$/],
+  ["health tcp next to log", (c) => (c.stacks.db.health = [{ tcp: "${PORT_DB}", log: "x" }]), /^\/stacks\/db\/health\/0$/],
   ["depends_on an undeclared stack", (c) => (c.stacks.backend.depends_on = ["cache"]), /^\/stacks\/backend\/depends_on\/0$/],
   ["path outside its repo", (c) => (c.stacks.frontend.path = "repos/other"), /^\/stacks\/frontend\/path$/],
   ["path not under repos/", (c) => (c.stacks.frontend.path = "frontend"), /^\/stacks\/frontend\/path$/],
   ["commands without dev", (c) => delete c.stacks.backend.commands.dev, /^\/stacks\/backend\/commands\/dev$/],
   ["unknown command", (c) => (c.stacks.backend.commands.deploy = "x"), /^\/stacks\/backend\/commands\/deploy$/],
   ["empty command", (c) => (c.stacks.backend.commands.test = ""), /^\/stacks\/backend\/commands\/test$/],
-  ["env_file with a path", (c) => (c.stacks.frontend.env_file = "../secrets/.env"), /^\/stacks\/frontend\/env_file$/],
+  ["env_files entry with a path", (c) => (c.stacks.frontend.env_files = ["../secrets/.env"]), /^\/stacks\/frontend\/env_files\/0$/],
+  ["env_files empty", (c) => (c.stacks.frontend.env_files = []), /^\/stacks\/frontend\/env_files$/],
+  ["secret key that is not an env var name", (c) => (c.stacks.frontend.secrets = ["not a key"]), /^\/stacks\/frontend\/secrets\/0$/],
   ["dev_url without scheme", (c) => (c.stacks.frontend.dev_url = "localhost:3000"), /^\/stacks\/frontend\/dev_url$/],
   ["depends_on unknown stack", (c) => (c.stacks.frontend.depends_on = ["mobile"]), /^\/stacks\/frontend\/depends_on\/0$/],
   ["self dependency", (c) => (c.stacks.backend.depends_on = ["backend"]), /^\/stacks\/backend\/depends_on\/0$/],
   ["dependency cycle", (c) => (c.stacks.backend.depends_on = ["frontend"]), /^\/stacks$/],
-  ["health with both log and http", (c) => (c.stacks.frontend.health = { log: "x", http: "y", expect_status: 200 }), /^\/stacks\/frontend\/health$/],
-  ["health empty", (c) => (c.stacks.frontend.health = {}), /^\/stacks\/frontend\/health$/],
-  ["health http without expect_status", (c) => delete c.stacks.backend.health.expect_status, /^\/stacks\/backend\/health\/expect_status$/],
-  ["expect_status 999", (c) => (c.stacks.backend.health.expect_status = 999), /^\/stacks\/backend\/health\/expect_status$/],
+  ["health entry with both log and http", (c) => (c.stacks.frontend.health = [{ log: "x", http: "y", expect_status: 200 }]), /^\/stacks\/frontend\/health\/0$/],
+  ["health entry empty", (c) => (c.stacks.frontend.health = [{}]), /^\/stacks\/frontend\/health\/0$/],
+  ["health list empty", (c) => (c.stacks.frontend.health = []), /^\/stacks\/frontend\/health$/],
+  ["health still an object", (c) => (c.stacks.frontend.health = { log: "ready" }), /^\/stacks\/frontend\/health$/],
+  ["health http without expect_status", (c) => delete c.stacks.backend.health[1].expect_status, /^\/stacks\/backend\/health\/1\/expect_status$/],
+  ["expect_status 999", (c) => (c.stacks.backend.health[1].expect_status = 999), /^\/stacks\/backend\/health\/1\/expect_status$/],
+  ["health http as a bare port", (c) => (c.stacks.backend.health[1].http = "${PORT_BACKEND}/healthz"), /^\/stacks\/backend\/health\/1\/http$/],
   ["health_timeout_s 0", (c) => (c.stacks.backend.health_timeout_s = 0), /^\/stacks\/backend\/health_timeout_s$/],
   ["PORT ref to a missing stack", (c) => (c.stacks.frontend.commands.dev = "pnpm dev --port ${PORT_MOBILE}"), /^\/stacks\/frontend$/],
   ["delivery mode rebase", (c) => (c.delivery.mode = "rebase"), /^\/delivery\/mode$/],
   ["delivery without commit_author", (c) => delete c.delivery.commit_author, /^\/delivery\/commit_author$/],
   ["commit_author bad email", (c) => (c.delivery.commit_author.email = "not-an-email"), /^\/delivery\/commit_author\/email$/],
-  ["git identity_hygiene lax", (c) => (c.git.identity_hygiene = "lax"), /^\/git\/identity_hygiene$/],
+  ["a git key at all", (c) => (c.git = { identity_hygiene: "strict" }), /^\/git$/],
+  ["notify events with no chat_id_ref", (c) => delete c.notify.telegram, /^\/notify\/telegram$/],
   ["inline telegram chat id", (c) => (c.notify.telegram = { chat_id: 12345 }), /^\/notify\/telegram\/chat_id/],
   ["unknown notify event", (c) => c.notify.events.push("deploy_done"), /^\/notify\/events\/3$/],
   ["duplicate notify event", (c) => c.notify.events.push("plan_ready"), /^\/notify\/events$/],
@@ -74,8 +146,22 @@ rejects("config", "two-stack/client.config.yaml", [
   ["viewport malformed", (c) => (c.visual.viewport = "1440"), /^\/visual\/viewport$/],
   ["threshold_pct over 100", (c) => (c.visual.threshold_pct = 150), /^\/visual\/threshold_pct$/],
   ["visual without max_attempts", (c) => delete c.visual.max_attempts, /^\/visual\/max_attempts$/],
-  ["max_parallel_features 0", (c) => (c.max_parallel_features = 0), /^\/max_parallel_features$/],
+  ["a max_parallel_features key at all", (c) => (c.max_parallel_features = 2), /^\/max_parallel_features$/],
 ]);
+
+function messageFor(mutate, pathRe) {
+  const data = load(fixture("two-stack/client.config.yaml"));
+  mutate(data);
+  return validate(data, "config").errors.find((e) => pathRe.test(e.path))?.message ?? "";
+}
+
+test("an old config is told what replaced each key it still carries", () => {
+  assert.match(messageFor((c) => (c.delivery.mode = "pr"), /^\/delivery\/mode$/), /"pr" is now "branch"/);
+  assert.match(messageFor((c) => (c.git = { identity_hygiene: "strict" }), /^\/git$/), /nothing reads it/);
+  assert.match(messageFor((c) => (c.max_parallel_features = 2), /^\/max_parallel_features$/), /nothing reads it/);
+  assert.match(messageFor((c) => (c.stacks.backend.health[1].http = "${PORT_BACKEND}/healthz"), /health\/1\/http$/),
+    /write "http:\/\/localhost:\$\{PORT_BACKEND\}\/healthz"/);
+});
 
 rejects("state", "two-stack/state.json", [
   ["missing harness_commit", (s) => delete s.harness_commit, /^\/harness_commit$/],

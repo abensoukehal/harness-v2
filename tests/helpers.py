@@ -43,7 +43,7 @@ TAIL = textwrap.dedent("""
       base_branch: main
       target_branch: main
       branch_prefix: feature/
-      mode: pr
+      mode: branch
       commit_author:
         name: Example Dev
         email: dev@example.com
@@ -81,11 +81,12 @@ def env_config(web_health='log: "ready on"', web_timeout=15, web_dev=WEB_DEV, ap
               install: %s
               dev: python3 -m http.server ${PORT_API} --bind 127.0.0.1
               lint: "true"
-            env_file: api.env
+            env_files: [api.env]
+            secrets: [API_KEY]
             depends_on: [db]
             health:
-              http: http://127.0.0.1:${PORT_API}/
-              expect_status: 200
+              - http: http://127.0.0.1:${PORT_API}/
+                expect_status: 200
             health_timeout_s: 15
             seed: %s
           web:
@@ -94,10 +95,11 @@ def env_config(web_health='log: "ready on"', web_timeout=15, web_dev=WEB_DEV, ap
             commands:
               dev: %s
               typecheck: "true"
-            env_file: web.env
+            env_files: [web.env]
+            secrets: [DB_PASSWORD]
             depends_on: [api]
             health:
-              %s
+              - %s
             health_timeout_s: %d
           db:
             repo: null
@@ -105,7 +107,7 @@ def env_config(web_health='log: "ready on"', web_timeout=15, web_dev=WEB_DEV, ap
             commands:
               dev: python3 -m http.server ${PORT_DB} --bind 127.0.0.1
             health:
-              tcp: ${PORT_DB}
+              - tcp: ${PORT_DB}
             health_timeout_s: 15
     """ % (extra, api_install, api_seed, web_dev, web_health, web_timeout)) + TAIL % "{api: pytest, web: vitest run}" + "browser_runner:\n  web: playwright test\n"
 
@@ -117,13 +119,13 @@ MONO_CONFIG = textwrap.dedent("""
         repo: mono
         path: repos/mono/apps/a
         commands: {dev: sleep 60}
-        health: {log: never}
+        health: [{log: never}]
         health_timeout_s: 5
       b:
         repo: mono
         path: repos/mono/apps/b
         commands: {dev: sleep 60}
-        health: {log: never}
+        health: [{log: never}]
         health_timeout_s: 5
 """) + TAIL % "{a: pytest, b: pytest}"
 
@@ -133,8 +135,11 @@ def env_workspace(root, slug="hello", config=None, repos=("svc", "web")):
     (ws / "product" / "client.config.yaml").write_text(config or env_config())
     for repo in repos:
         make_repo(ws / "repos" / repo)
-    (ws / "secrets" / "api.env").write_text("API_KEY=abcd1234\n")
-    (ws / "secrets" / "web.env").write_text("DB_PASSWORD=hunter2-secret\n")
+    for stack, line in [("api", "API_KEY=abcd1234\n"), ("web", "DB_PASSWORD=hunter2-secret\n")]:
+        (ws / "secrets" / stack).mkdir(exist_ok=True)
+        (ws / "secrets" / stack / (stack + ".env")).write_text(line)
+    (ws / "secrets" / "telegram_chat_id").write_text("4242\n")
+    (ws / "secrets" / "telegram_bot_token").write_text("bot-token-value\n")
     assert run("new", slug, ws=ws).returncode == 0
     from harness.config import create_state
     create_state(ws, slug, "service")

@@ -27,6 +27,13 @@ def load_config(ws):
         return yaml.safe_load(f)
 
 
+def read_config(ws):
+    """The config without the checks that read secrets/. Setup uses this: a workspace has to exist before anyone can
+    put a credential in it, so init and link read the shape and every command that runs a stack calls load_config."""
+    with open(config_path(ws)) as f:
+        return yaml.safe_load(f)
+
+
 def feature_dir(ws, slug):
     return ws / "product" / "features" / slug
 

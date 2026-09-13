@@ -21,8 +21,9 @@ planner, test-writer, worker, reviewer, qa, retro. Skills: criteria-runner, visu
 - Cost comes from the runtime transcripts: input tokens per agent, counted only for agents whose first message names both the feature and the workspace path, with the model and effort that spent them.
 - A relaunch still inside the safety net rebuilds and refreezes it; the net check refuses an unfrozen net only past that phase.
 - Every answered gap carries `Pinned:`, a sub-task and one of its criteria; `bin/plan` refuses an answer that resolves to no criterion in `plan.md`.
-- The scrubber redacts a value of at least 8 characters, on a token boundary; a shorter secret fails setup by key instead of being substituted.
+- A stack declares which env keys are secret; the scrubber covers those and no others, on a token boundary. A declared value under 8 characters fails validation by key instead of being substituted.
 - `client_tests.<stack>` and `stacks.<stack>.commands.test` are one command, and the cross-field pass refuses a config where they differ.
+- A stack's `health` is a list every entry of which must pass, an `http` entry carries a full URL, and a declared `notify` event without its credentials under `secrets/` is a validation failure.
 - The budget is `budget.tokens_per_feature` plus `budget.tokens_per_subtask` per sub-task in the plan, both measured; the overrun is counted once, over the run's own total.
 - The plan-ready message is rendered from the parsed plan by `bin/review`, with a Mermaid graph beside it; no agent writes it.
 - A sub-task carries at most five criteria, one stack, and dependencies declared by id; the parse refuses a cycle.
@@ -36,5 +37,4 @@ planner, test-writer, worker, reviewer, qa, retro. Skills: criteria-runner, visu
 
 ## Known limits
 - Every mechanical step is a subagent that loads the full context; see OPEN_QUESTIONS.md.
-- The push to the engine remote needs a remote that accepts branch pushes.
 - No browser runner ships with the engine; screen checks need one in the client config.

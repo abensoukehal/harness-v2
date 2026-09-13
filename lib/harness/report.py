@@ -116,7 +116,7 @@ def build_report(ws, slug):
         lines.append("Answer the question%s above first." % ("s" if len(asks) > 1 else ""))
     if status in ("partial", "nothing landed"):
         lines.append("The branch %s was not delivered; see the frictions in state." % state["branch"])
-    elif cfg["delivery"]["mode"] == "pr":
+    elif cfg["delivery"]["mode"] == "branch":
         lines.append("Open a PR from %s." % state["branch"])
     else:
         lines.append("%s was merged into %s." % (state["branch"], cfg["delivery"]["target_branch"]))

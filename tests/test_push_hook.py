@@ -57,7 +57,7 @@ class PrePush(unittest.TestCase):
         self.assertEqual(sh("git", "branch", "--list", "feature/hello", cwd=self.remote).strip(), "feature/hello")
 
     def test_direct_merge_reaches_target_only_at_delivery(self):
-        (self.ws / "product/client.config.yaml").write_text(env_config().replace("mode: pr", "mode: direct_merge"))
+        (self.ws / "product/client.config.yaml").write_text(env_config().replace("mode: branch", "mode: direct_merge"))
         self.state["phase"] = "build"
         save_state(self.ws, "hello", self.state)
         early = push(self.wt, "origin", "HEAD:main")

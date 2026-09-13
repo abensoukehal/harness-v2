@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 from . import HARNESS_ROOT, PIN, HarnessError, check_pin, check_slug, git
-from .config import load_config
+from .config import read_config, validate
 from .worktree import repos_of
 
 TEMPLATES = HARNESS_ROOT / "templates"
@@ -34,6 +34,8 @@ def init(client, root, config=None, out=sys.stdout):
     os.chmod(ws / "secrets", 0o700)
     (ws / "CLAUDE.md").write_text(render("workspace/CLAUDE.md", client=client, root=str(ws)))
     product = ws / "product"
+    if config:
+        validate(config, "config")  # at its own path: the secrets checks want a workspace that does not exist yet
     (product / "client.config.yaml").write_text(config.read_text() if config else render("workspace/client.config.yaml", client=client))
     (product / "conventions.md").write_text("")
     (product / "cost-log.md").write_text(COST_LOG_HEADER)
@@ -47,7 +49,7 @@ def init(client, root, config=None, out=sys.stdout):
     (ws / PIN).write_text(git("rev-parse", "HEAD", cwd=ws / "harness") + "\n")
     install_harness(ws / "harness")
     if config:
-        clone_repos(ws, load_config(ws), strict=True, out=out)
+        clone_repos(ws, read_config(ws), strict=True, out=out)
     link(ws, out)
     return ws
 
@@ -81,7 +83,7 @@ def link(ws, out=sys.stdout):
     if not source.is_dir():
         raise HarnessError("%s has no harness/claude directory" % ws)
     check_pin(ws)
-    clone_repos(ws, load_config(ws), strict=False, out=out)
+    clone_repos(ws, read_config(ws), strict=False, out=out)
     dot = ws / ".claude"
     dot.mkdir(exist_ok=True)
     settings_path = dot / "settings.json"

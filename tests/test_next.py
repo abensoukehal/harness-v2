@@ -79,7 +79,7 @@ class NextRound(unittest.TestCase):
         self.set_subtasks([st("st-01", "api", "svc"), st("st-02", "api", "svc"), st("st-03", "web", "web")])
         self.assertEqual(self.next()["ready"], ["st-01", "st-03"])
         config = "client: example-many\nstacks:\n" + "".join(
-            "  s%d:\n    repo: r%d\n    path: repos/r%d\n    commands: {dev: sleep 60}\n    health: {log: never}\n    health_timeout_s: 5\n" % (i, i, i)
+            "  s%d:\n    repo: r%d\n    path: repos/r%d\n    commands: {dev: sleep 60}\n    health: [{log: never}]\n    health_timeout_s: 5\n" % (i, i, i)
             for i in range(1, 6)) + TAIL % "{s1: t, s2: t, s3: t, s4: t, s5: t}"
         (self.ws / "product/client.config.yaml").write_text(config)
         self.set_subtasks([st("st-0%d" % i, "s%d" % i, "r%d" % i) for i in range(1, 6)])

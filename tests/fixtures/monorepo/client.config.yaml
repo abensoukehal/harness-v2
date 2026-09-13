@@ -10,12 +10,12 @@ stacks:
       dev: npm run dev -- --port ${PORT_WEB}
       build: npm run build
       test: npm test
-    env_file: web.env
+    env_files: [web.env]
     dev_url: http://localhost:${PORT_WEB}
     depends_on: [api]
     health:
-      http: http://localhost:${PORT_WEB}/
-      expect_status: 200
+      - http: http://localhost:${PORT_WEB}/
+        expect_status: 200
     health_timeout_s: 120
   api:
     repo: mono
@@ -26,12 +26,13 @@ stacks:
       dev: uvicorn app.main:app --port ${PORT_API}
       test: pytest
       lint: ruff check .
-    env_file: api.env
+    env_files: [api.env, api.local.env]
+    secrets: [DATABASE_URL]
     dev_url: http://localhost:${PORT_API}
     logs: logs/api.log
     depends_on: [db]
     health:
-      log: "Application startup complete"
+      - log: "Application startup complete"
     health_timeout_s: 90
     seed: python -m app.seed
   db:
@@ -40,7 +41,7 @@ stacks:
     commands:
       dev: docker compose up -d postgres
     health:
-      tcp: ${PORT_DB}
+      - tcp: ${PORT_DB}
     health_timeout_s: 60
 
 delivery:

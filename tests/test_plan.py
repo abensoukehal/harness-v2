@@ -75,7 +75,7 @@ class Plan(unittest.TestCase):
         self.assertEqual(out["subtasks"][2]["exit_criteria"], [{"kind": "examples", "set": "api/summaries.json", "floor": 0.9}])
         self.assertEqual(out["config"]["stacks"], {"api": {"repo": "svc", "role": "backend"}, "web": {"repo": "web", "role": "frontend"},
                                                    "db": {"repo": None, "role": "backend"}})
-        self.assertEqual((out["config"]["max_fixes"], out["config"]["mode"], out["config"]["branch_prefix"]), (3, "pr", "feature/"))
+        self.assertEqual((out["config"]["max_fixes"], out["config"]["mode"], out["config"]["branch_prefix"]), (3, "branch", "feature/"))
 
     def test_malformed_plans_quote_the_line(self):
         cases = [

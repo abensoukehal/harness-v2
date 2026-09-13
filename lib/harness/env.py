@@ -44,22 +44,25 @@ def start_order(stacks):
 
 
 def load_secrets(ws, cfg):
-    per_stack, everything = {}, {}
+    """Every env file a stack names, from secrets/<stack>/, later entries winning. The stack's own env is all of it;
+    only the keys it declares under secrets: are floored and scrubbed (9.3)."""
+    per_stack, scrubbed = {}, {}
     for name, stack in cfg["stacks"].items():
         values = {}
-        if "env_file" in stack:
-            path = ws / "secrets" / stack["env_file"]
+        for filename in stack.get("env_files", []):
+            path = ws / "secrets" / name / filename
             if not path.exists():
-                raise HarnessError("stack %s: secrets/%s is missing" % (name, stack["env_file"]))
-            values = load_env_file(path)
+                raise HarnessError("stack %s: secrets/%s/%s is missing" % (name, name, filename))
+            values.update(load_env_file(path))
+        declared = stack.get("secrets", [])
+        short = too_short(values, declared)
+        if short:
+            raise HarnessError("stack %s: %s under the %d-character floor. The scrubber cannot redact a value that "
+                               "short without shredding ordinary output, so the run refuses rather than leak or "
+                               "mangle (9.3)" % (name, ", ".join(short), FLOOR))
         per_stack[name] = values
-        everything.update(values)
-    short = too_short(everything)
-    if short:
-        raise HarnessError("secrets: %s under the %d-character floor. The scrubber cannot redact a value that short "
-                           "without shredding ordinary output, so the run refuses rather than leak or mangle (9.3)"
-                           % (", ".join(short), FLOOR))
-    return per_stack, Scrubber(everything)
+        scrubbed.update({k: values[k] for k in declared if k in values})
+    return per_stack, Scrubber(scrubbed)
 
 
 def expand(text, env):
@@ -86,7 +89,11 @@ def tail(path, scrubber, n=10):
     return scrubber.scrub("\n".join(lines))
 
 
-def healthy(health, source, env):
+def healthy(checks, source, env):
+    return all(one_check(c, source, env) for c in checks)
+
+
+def one_check(health, source, env):
     if "log" in health:
         return source.exists() and re.search(health["log"], source.read_text(errors="replace")) is not None
     if "tcp" in health:
@@ -151,7 +158,7 @@ def start_stack(ws, cfg, state, slug, name, secrets, scrubber, rd, out, do_seed=
     env = dict(os.environ)
     env.update({"PORT_" + n.upper(): str(p) for n, p in state["ports"].items()})
     env.update(secrets)
-    keys = list(secrets)
+    keys = [k for k in stack.get("secrets", []) if k in secrets]  # the scrubber covers declared secrets, not config
     cwd = stack_dir(ws, cfg, slug, name)
     if not cwd.is_dir():
         raise HarnessError("stack %s: %s does not exist in the worktree" % (name, cwd.relative_to(ws)))

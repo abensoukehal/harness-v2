@@ -96,11 +96,12 @@ stacks:
       lint: pnpm lint
       typecheck: pnpm tsc --noEmit
       test: pnpm test
-    env_file: .env.local        # resolved from workspaces/<client>/secrets/, never inline
+    env_files: [.env, .env.local]   # resolved from workspaces/<client>/secrets/frontend/, later entries winning
+    secrets: [SESSION_SECRET]       # the keys the scrubber covers and the floor applies to; the rest is config
     dev_url: http://localhost:${PORT_FRONTEND}
     depends_on: [backend]
-    health:
-      log: "ready on"
+    health:                         # a list; every entry must pass
+      - log: "ready on"
     health_timeout_s: 120
   backend:
     repo: backend             # git repo this stack lives in; several stacks may share one
@@ -111,12 +112,15 @@ stacks:
       dev: python manage.py runserver 0.0.0.0:${PORT_BACKEND}
       test: pytest
       lint: ruff check .
+    env_files: [.env]
+    secrets: [DATABASE_URL, DJANGO_SECRET_KEY]
     dev_url: http://localhost:${PORT_BACKEND}
     logs: stdout            # or a file path, or a docker container name
     depends_on: [db]        # start order; every name here must be a declared stack
-    health:                 # ready means this passes, not that the process exists
-      http: ${PORT_BACKEND}/healthz
-      expect_status: 200
+    health:                 # ready means every entry passes, not that the process exists
+      - log: "Starting development server"
+      - http: http://localhost:${PORT_BACKEND}/healthz   # a full URL; a bare port is refused at validation
+        expect_status: 200
     health_timeout_s: 180
     seed: python manage.py loaddata fixtures/seed.json
   db:                       # infrastructure is a stack. Anything the run starts,
@@ -125,7 +129,7 @@ stacks:
     commands:
       dev: docker compose up -d postgres
     health:
-      tcp: ${PORT_DB}
+      - tcp: ${PORT_DB}
     health_timeout_s: 60
   # mobile, ai: same shape, optional
 
@@ -133,13 +137,10 @@ delivery:
   base_branch: develop      # branch to start from
   target_branch: develop    # branch the PR/merge goes to
   branch_prefix: feature/
-  mode: pr                  # pr | direct_merge
+  mode: branch              # branch | direct_merge
   commit_author:
     name: Ali <last name>
     email: ali@...
-
-git:
-  identity_hygiene: strict  # enforces section 9 rules
 
 notify:
   telegram:
@@ -158,9 +159,13 @@ test_runner:
 
 Required per stack: `commands.dev`, `health`, `health_timeout_s`. Phases 4 and 5 need every stack running and need to know when it is ready, so a stack missing any of the three fails validation instead of failing at hour two.
 
+`health` is a list and every entry must pass. One check is rarely the truth about a legacy stack: a port is open before migrations have run, and a ready line appears before the first request succeeds. The three kinds are unchanged. An `http` entry takes a full URL, because that is what the run opens; a bare port is refused at validation with the fixed form in the message.
+
+`env_files` is a list, each name resolved from `secrets/<stack>/`, later entries winning, so a base file and a local override read the way the client's own tooling reads them. `secrets` names the keys the scrubber covers. Only a declared key carries the 8-character floor: a real env file is mostly `DEBUG=1`, a port and a timezone, and flooring those would refuse every legacy config on values that are not secrets at all.
+
 `repo` and `path` are null together or not at all, and only for a stack the harness starts but never edits, such as a database container. A repo-less stack gets no worktree and runs from the workspace root, and a plan sub-task cannot target one. A sub-task that needs to change it is a client infrastructure change, which is not something this system delivers.
 
-Validation runs in two passes: schema first, then cross-field checks (paths under their declared repo, `depends_on` names exist and do not cycle, `${PORT_*}` references resolve, test keys are declared stacks, `client_tests.<stack>` and `stacks.<stack>.commands.test` agree, worktree paths match `.worktrees/<feature>/<repo>`). Cross-field checks only run once the schema pass is clean, so a badly broken file takes two rounds to fully diagnose. That is the right order, and the validator says which pass it is reporting.
+Validation runs in two passes: schema first, then cross-field checks (paths under their declared repo, `depends_on` names exist and do not cycle, `${PORT_*}` references resolve, an `http` health entry is a full URL, every declared secret is present in the stack's env files and over the floor, a declared `notify` event has a `chat_id_ref` and both Telegram files under `secrets/`, test keys are declared stacks, `client_tests.<stack>` and `stacks.<stack>.commands.test` agree, worktree paths match `.worktrees/<feature>/<repo>`). A declared event with nothing behind it is refused here rather than becoming two frictions on every run that say nothing about the feature. Cross-field checks only run once the schema pass is clean, so a badly broken file takes two rounds to fully diagnose. That is the right order, and the validator says which pass it is reporting.
 
 
 budget:
@@ -532,7 +537,7 @@ Running a client's stacks needs their env files, database and service credential
 - Credentials live in `workspaces/<client>/secrets/`, outside git, outside the product layer, never in `client.config.yaml`. The config references them by name, not by value.
 - The harness injects them into stack processes as env vars at start. No agent ever reads the secrets directory, and no briefing quotes a value.
 - Output of stack and seed commands is scrubbed for those values before it enters any context, so a service that echoes its connection string on boot cannot leak it into a transcript.
-- **The scrubber has a floor and a boundary.** A value under 8 characters fails setup, named by its key, rather than being substituted: a short value collides with ordinary output and shreds it. A value is replaced only on a token boundary, so a secret that happens to match part of a path or an identifier does not take the rest of it with it. A scrubber that mangles every friction it touches is turned off by the first person who reads one.
+- **The scrubber has a floor and a boundary.** The config names which keys are secret; every other key in an env file is ordinary configuration, neither scrubbed nor floored. A declared value under 8 characters fails validation, named by its key, rather than being substituted: a short value collides with ordinary output and shreds it. A value is replaced only on a token boundary, so a secret that happens to match part of a path or an identifier does not take the rest of it with it. A scrubber that mangles every friction it touches is turned off by the first person who reads one.
 - **The scrubber covers what the harness runs, not what an agent runs.** A command an agent issues itself in bash reaches that agent's transcript directly, and no layer below can intercept it. What covers that gap instead: agents never read the secrets directory, briefings never quote a value, and every stack command with a secret in it is invoked through the harness rather than composed by an agent. State the limit rather than trusting a guarantee the mechanism does not provide.
 - Test data is seeded and fake. A run never touches a client's real database, staging included.
 - Deleting a workspace deletes the secrets with it.
@@ -559,7 +564,7 @@ One routine, driven by config:
 - Create `${branch_prefix}<slug>` from `base_branch` at run start.
 - One commit per validated sub-task (section 9.2).
 - At the end of phase 5:
-  - `mode: pr` → push the branch, then stop. Ali opens the PR himself and handles the client-side review and merge.
+  - `mode: branch` → push the branch, then stop. Ali opens the PR himself and handles the client-side review and merge.
   - `mode: direct_merge` → merge into `target_branch`, push. Global QA is the only gate.
 - Never force-push. Never touch `target_branch` in `pr` mode.
 
@@ -610,7 +615,7 @@ Several features can run at once inside one workspace. Two runs must never share
 - `product/features/<slug>/` is per feature, so state, plan and retro never conflict.
 - `product/conventions.md` and `code-map/` are shared and mutable. Concurrent runs append to them through a single-writer lock (`product/.lock`); a run that can't take the lock queues its update to the end of its phase rather than blocking.
 - Cleanup removes each worktree (`git worktree remove`) along with the processes and ports.
-- Cap concurrent features per workspace in config (`max_parallel_features`, default 2). CPU and the 16-agent runtime cap are the real limits.
+- Nothing caps concurrent features in config. CPU and the 16-agent runtime cap are the real limits, and a setting nothing reads only looks like one.
 
 ## 12. Code verbosity control
 

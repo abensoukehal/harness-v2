@@ -12,11 +12,12 @@ stacks:
       lint: pnpm lint
       typecheck: pnpm tsc --noEmit
       test: pnpm test
-    env_file: .env.local
+    env_files: [.env, .env.local]
+    secrets: [SESSION_SECRET]
     dev_url: http://localhost:${PORT_FRONTEND}
     depends_on: [backend]
     health:
-      log: "ready on"
+      - log: "ready on"
     health_timeout_s: 120
   backend:
     repo: backend
@@ -27,13 +28,15 @@ stacks:
       dev: python manage.py runserver 0.0.0.0:${PORT_BACKEND}
       test: pytest
       lint: ruff check .
-    env_file: .env
+    env_files: [.env]
+    secrets: [DATABASE_URL]
     dev_url: http://localhost:${PORT_BACKEND}
     logs: stdout
     depends_on: [db]
     health:
-      http: http://localhost:${PORT_BACKEND}/healthz
-      expect_status: 200
+      - log: "Starting development server"
+      - http: http://localhost:${PORT_BACKEND}/healthz
+        expect_status: 200
     health_timeout_s: 180
     seed: python manage.py loaddata fixtures/seed.json
   db:
@@ -42,20 +45,17 @@ stacks:
     commands:
       dev: docker compose up -d postgres
     health:
-      tcp: ${PORT_DB}
+      - tcp: ${PORT_DB}
     health_timeout_s: 60
 
 delivery:
   base_branch: develop
   target_branch: develop
   branch_prefix: feature/
-  mode: pr
+  mode: branch
   commit_author:
     name: Example Dev
     email: dev@example.com
-
-git:
-  identity_hygiene: strict
 
 notify:
   telegram:
@@ -81,5 +81,3 @@ visual:
   threshold_pct: 2.0
   viewport: 1440x900
   max_attempts: 4
-
-max_parallel_features: 2

@@ -214,21 +214,30 @@ class Up(unittest.TestCase):
         self.assertFalse((ws / ".run/hello").exists())
         self.assertFalse(is_held(load_state(ws, "hello")["ports"]["api"]))
 
-    def test_a_secret_under_the_floor_is_refused_by_key(self):
+    def test_a_declared_secret_under_the_floor_is_refused_by_key(self):
         ws = self.workspace()
-        (ws / "secrets/api.env").write_text("API_KEY=abcd\n")
+        (ws / "secrets/api/api.env").write_text("API_KEY=abcd\n")
         done = run("up", "hello", ws=ws)
         self.assertEqual(done.returncode, 1)
-        self.assertIn("secrets: API_KEY under the 8-character floor", done.stderr)
+        self.assertIn('"API_KEY" is 4 characters', done.stderr)
         self.assertNotIn("DB_PASSWORD", done.stderr, "only the value that is too short is named")
         self.assertFalse((ws / ".run/hello").exists(), "nothing started behind a scrubber that cannot cover a value")
 
+    def test_an_undeclared_short_value_is_ordinary_config(self):
+        ws = self.workspace()
+        (ws / "secrets/api/api.env").write_text("API_KEY=abcd1234\nDEBUG=1\nTZ=UTC\n")
+        done = run("up", "hello", ws=ws)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertNotIn("DEBUG", done.stderr)
+
     def test_missing_state_or_secret_is_named(self):
         ws = self.workspace()
-        (ws / "secrets/web.env").unlink()
+        (ws / "secrets/web/web.env").unlink()
         done = run("up", "hello", ws=ws)
         self.assertEqual(done.returncode, 1)
-        self.assertIn("secrets/web.env is missing", done.stderr)
+        self.assertIn("secrets/web/web.env is missing", done.stderr)
+        # The config is checked before the state is read, so put the env file back to see the other refusal.
+        (ws / "secrets/web/web.env").write_text("DB_PASSWORD=hunter2-secret\n")
         (ws / "product/features/hello/state.json").unlink()
         done = run("up", "hello", ws=ws)
         self.assertEqual(done.returncode, 1)
