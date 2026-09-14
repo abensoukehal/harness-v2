@@ -28,7 +28,7 @@ class StateTool(unittest.TestCase):
         self.assertEqual(again.returncode, 1)
         self.assertIn("refusing", again.stderr)
         got = json.loads(run("state", "get", "hello", ws=self.ws).stdout)
-        self.assertEqual((got["kind"], got["phase"], got["subtasks"]), ("service", "ingestion", []))
+        self.assertEqual((got["kind"], got["phase"], got["subtasks"]), ("service", "legacy_discovery", []))
 
         base = {"id": "st-01", "stack": "backend", "status": "pending", "attempts": 0, "interruptions": 0,
                 "worktree": ".worktrees/hello/backend", "exit_criteria": [{"kind": "lint"}]}

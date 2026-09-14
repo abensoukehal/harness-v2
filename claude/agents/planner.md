@@ -10,7 +10,7 @@ tools: Read, Edit, Write, Bash, Grep
 Turn `spec.md`, `design/` and the client config into a bounded plan with machine-runnable criteria. Write files. Implement nothing.
 
 ## Method
-Ingestion:
+Legacy Discovery:
 - Read `spec.md` and `design/`. List the user-facing outcomes and the pain points.
 - Name the stacks and, per stack, the zones the feature touches. Map only those. Skip every zone the spec and design do not name.
 - Per zone, grep for entry points, existing patterns, existing tests and data models. Write or update `code-map/<zone>.md`: the code as it is now. No history, no feature slug, no date. Delete entries describing code that does not exist. Keep each file under 4,000 characters; at the cap, merge entries.

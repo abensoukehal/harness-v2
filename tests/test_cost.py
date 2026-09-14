@@ -31,7 +31,7 @@ class Cost(unittest.TestCase):
             wf = Path(d) / "wf_1"
             wf.mkdir()
             transcript(wf, "aaa1", "workflow-subagent", "Workspace root: %s. Run `%s/harness/bin/plan hello`." % (ws, ws), [(2, 51000, 0, 21), (32, 2000, 51000, 26)], 0)
-            transcript(wf, "aaa2", "planner", "Workspace root: %s. Feature hello. Run the Ingestion part" % ws, [(10, 100000, 0, 900), (5, 0, 100000, 1100)], 1)
+            transcript(wf, "aaa2", "planner", "Workspace root: %s. Feature hello. Run the Legacy Discovery part" % ws, [(10, 100000, 0, 900), (5, 0, 100000, 1100)], 1)
             transcript(wf, "aaa3", "worker", "# Mission st-01 · Orders export\nfeature: hello   branch: feature/hello\nworkspace: %s" % ws, [(1, 0, 120000, 3000)], 2)
             transcript(wf, "aaa4", "workflow-subagent", "Workspace root: %s. Run `%s/harness/bin/briefing hello st-01`." % (ws, ws), [(1, 0, 100000, 40)], 3)
             transcript(wf, "bbb1", "worker", "# Mission st-01 · Something else\nfeature: hello-world   branch: feature/hello-world\nworkspace: %s" % ws, [(1, 0, 999999, 1)], 4)

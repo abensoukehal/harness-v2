@@ -70,7 +70,7 @@ def create_state(ws, slug, kind):
         "kind": kind,
         "harness_commit": git("rev-parse", "HEAD", cwd=ws / "harness"),
         "branch": cfg["delivery"]["branch_prefix"] + slug,
-        "phase": "ingestion",
+        "phase": "legacy_discovery",
         "ports": {},
         "worktrees": {},
         "subtasks": [],

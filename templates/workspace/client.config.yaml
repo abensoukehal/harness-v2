@@ -81,7 +81,7 @@ browser_runner:
 
 budget:
   # Deliberately loose for the first run on a real repo: double what the archive-items run (run 4) spent,
-  # 5.97M across plan and build with 2.46M of it attributed to its two sub-tasks. Ingestion scales with the
+  # 5.97M across plan and build with 2.46M of it attributed to its two sub-tasks. Legacy Discovery scales with the
   # repo, not the feature, so a legacy codebase can outspend a measured toy before its first sub-task. The
   # run-1 retro sets the real pair from that run's own measurement.
   tokens_per_feature: 7200000

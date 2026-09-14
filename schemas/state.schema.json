@@ -148,7 +148,7 @@
         }
       }
     },
-    "ingestion": {
+    "legacy_discovery": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -272,7 +272,7 @@
     },
     "phase": {
       "enum": [
-        "ingestion",
+        "legacy_discovery",
         "planning",
         "safety_net",
         "build",

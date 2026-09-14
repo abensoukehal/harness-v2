@@ -3,7 +3,7 @@ export const meta = {
   description: 'Ingest one feature and write plan.md, spec-gaps.md and journey.md for validation',
   whenToUse: 'Phases 1-2 of a feature. Args: the feature slug. Run /harness-build after the plan is validated.',
   phases: [
-    { title: 'Ingestion', detail: 'targeted code map and conventions' },
+    { title: 'Legacy Discovery', detail: 'targeted code map and conventions' },
     { title: 'Planning', detail: 'sub-tasks, spec gaps, journey' },
   ],
 }
@@ -59,7 +59,7 @@ const SCOUT = {
   },
   required: ['spec_exists', 'plan_exists', 'state_exists', 'design_files', 'agents'],
 }
-const INGESTION = {
+const LEGACY_DISCOVERY = {
   type: 'object',
   properties: { stacks: { type: 'array', items: { type: 'string' } }, zones: { type: 'array', items: { type: 'string' } }, summary: { type: 'string' } },
   required: ['stacks', 'zones', 'summary'],
@@ -88,7 +88,7 @@ const parseStep = () => agent(
   `${IO}Run \`${T('plan')} ${slug}\`. Exit 0: ok true, subtask_count = length of "subtasks" in its JSON. Otherwise ok false, error = its stderr verbatim.`,
   { label: 'parse plan', schema: RESULT, agentType: 'io', ...A('io') })
 
-phase('Ingestion')
+phase('Legacy Discovery')
 const scout = await spawn(
   `${IO}Report on ${FEATURE}: does ${FEATURE}/spec.md exist, does ${FEATURE}/plan.md exist, does ${FEATURE}/state.json exist, and list the files under ${FEATURE}/design. ` +
   `Then run \`${T('agents')}\` and return its JSON verbatim as agents.`,
@@ -100,25 +100,25 @@ const noSpec = specRefusal(FEATURE, `${T('new')} ${slug}`, scout)
 if (noSpec) throw new Error(noSpec)
 if (scout.plan_exists) log(`plan.md exists for ${slug}: planning reruns and rewrites it`)
 
-const ingestion = await spawn(
+const discovery = await spawn(
   `Workspace root: ${WS}. Feature ${slug}. Every path below is absolute; use these, resolve none yourself. ` +
-  `Run the Ingestion part of your Method on ${FEATURE}/spec.md and ${FEATURE}/design (${scout.design_files.length} files). ` +
+  `Run the Legacy Discovery part of your Method on ${FEATURE}/spec.md and ${FEATURE}/design (${scout.design_files.length} files). ` +
   `Write ${WS}/product/code-map/ and ${WS}/product/conventions.md. Return the stacks, the zones and a summary under 300 characters.`,
-  { agentType: 'planner', label: 'ingest', schema: INGESTION, ...A('planner') })
-if (!ingestion) throw new Error(RUNTIME)
-log(`ingested ${ingestion.zones.length} zones across ${ingestion.stacks.join(', ')}`)
+  { agentType: 'planner', label: 'legacy_discovery', schema: LEGACY_DISCOVERY, ...A('planner') })
+if (!discovery) throw new Error(RUNTIME)
+log(`mapped ${discovery.zones.length} zones across ${discovery.stacks.join(', ')}`)
 
 phase('Planning')
 const planning = await spawn(
   `Workspace root: ${WS}. Feature ${slug}. Every path below is absolute; use these, resolve none yourself. ` +
-  `Ingestion found stacks ${ingestion.stacks.join(', ')} and zones ${ingestion.zones.join(', ')}. ${ingestion.summary}\n` +
+  `Legacy Discovery found stacks ${discovery.stacks.join(', ')} and zones ${discovery.zones.join(', ')}. ${discovery.summary}\n` +
   `Run the Planning part of your Method. Write ${FEATURE}/plan.md in the exact layout, ${FEATURE}/spec-gaps.md and ${FEATURE}/journey.md. ` +
   'Return kind and the counts. The plan-ready message is rendered from the plan by a tool (13.3); write none.',
   { agentType: 'planner', label: 'plan', schema: PLANNING, ...A('planner') })
 if (!planning) throw new Error(RUNTIME)
 
 const init = scout.state_exists ? '' : `${T('state')} init ${slug} ${planning.kind}\n`
-const patch = JSON.stringify({ kind: planning.kind, phase: 'planning', ingestion: { stacks: ingestion.stacks, zones: ingestion.zones, summary: ingestion.summary } })
+const patch = JSON.stringify({ kind: planning.kind, phase: 'planning', legacy_discovery: { stacks: discovery.stacks, zones: discovery.zones, summary: discovery.summary } })
 const recorded = await spawn(
   `${IO}Run:\n${init}${T('state')} update ${slug} - <<'EOF'\n${patch}\nEOF\nReturn ok true when every command exits 0, else ok false with the stderr as error.`,
   { label: 'record state', schema: RESULT, agentType: 'io', ...A('io') })

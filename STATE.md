@@ -4,7 +4,7 @@
 A project-agnostic engine that implements one feature at a time in client repos it does not own. Three workflows, `/harness-plan`, `/harness-build`, `/harness-retro`, orchestrate subagents; every filesystem and shell step runs inside an agent through `bin/` tools; `lib/harness/` holds the mechanics; `schemas/` holds the config, state and worker result contracts.
 
 ## Phases
-1. Ingestion and planning: the planner writes `code-map/`, `conventions.md`, `plan.md`, `spec-gaps.md`, `journey.md`; `plan_ready` is pushed.
+1. Legacy Discovery and planning: the planner writes `code-map/`, `conventions.md`, `plan.md`, `spec-gaps.md`, `journey.md`; `plan_ready` is pushed.
 2. Safety net: client baseline, regression tests under `product/tests/`, mutation check, freeze.
 3. Build: per sub-task a worker, a reviewer, a commit; rounds come from `bin/next`; a restart request is served twice per sub-task.
 4. QA and delivery: journey, net, baseline diff, visual diff, bounded fixes, then the push. Both run only when at least one sub-task landed; otherwise the run records `delivered: false` and reports partial.

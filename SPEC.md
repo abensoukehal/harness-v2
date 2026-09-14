@@ -199,7 +199,7 @@ A phase that reads something not on its input line is reaching outside its contr
 
 | Phase | Consumes | Produces |
 |---|---|---|
-| 1 Ingestion | `client.config.yaml`, Ali's spec and design, `code-map/`, conventions, the repos | updated `code-map/` entries for the touched zones |
+| 1 Legacy Discovery | `client.config.yaml`, Ali's spec and design, `code-map/`, conventions, the repos | updated `code-map/` entries for the touched zones |
 | 2 Planning | phase 1 output, spec, design, feature kind | `plan.md`, `spec-gaps.md`, `journey.md`, the `plan_ready` ask |
 | Human gate | those three files | Ali's approval, or edits to the plan |
 | 3 Safety net | `plan.md` parsed once, the client's own suite, the zones | `client_test_baseline`, `product/tests/`, mutation proof, `net_commit`, an initialised `state.json` |
@@ -211,7 +211,7 @@ A phase that reads something not on its input line is reaching outside its contr
 
 Two lines in that table carry most of the design. **`plan.md` is consumed by phase 3 and by nothing after it**: it is parsed once at launch, its criteria are copied into `state.json` in full, and no later phase re-reads it. A plan edited mid-run changes nothing, which is the point. And **the retro produces into its own clone**, never into the workspace's `harness/`, which is what keeps the pin honest.
 
-### Phase 1: Ingestion (targeted)
+### Phase 1: Legacy Discovery (targeted)
 
 Inputs: `spec.md`, `design/` (Figma export or Claude Design export as images plus any structured data), `client.config.yaml`, `conventions.md` and `code-map/` if they exist from previous features.
 
@@ -221,7 +221,7 @@ Work:
 - Map those zones: entry points, existing patterns, existing test coverage, data models involved. Write it to `code-map/<zone>.md`. Reuse existing map files, update them, never rewrite from scratch.
 - Learn conventions from the touched code (naming, error handling, service patterns). Write/update `conventions.md`.
 
-Output: updated `code-map/`, `conventions.md`, and a short ingestion summary in `state.json`.
+Output: updated `code-map/`, `conventions.md`, and a short Legacy Discovery summary in `state.json`.
 
 Exit: every stack listed in the plan has a map file and the summary names the files each sub-task will touch.
 
@@ -408,7 +408,7 @@ Non-negotiable rules.
 6. **Budget per worker.** Token budget in the briefing, defaulting to the feature budget divided by the sub-task count and overridable per sub-task in state. Worker exceeds it → stops, reports partial state as BLOCKED with `reason: budget`.
 7. **Budget per briefing.** `budget.briefing_chars` caps assembled size. Over the cap, assembly refuses and names both the cap and the size of the conventions file that pushed it over, because that file is nearly always the cause and the fix is a reduction pass, not a larger cap.
 7. **Knowledge goes to files, not context.** What a worker learns about the code goes to `code-map/` or `conventions.md`, not into its running context for later.
-8. **No context chaining.** One `CLAUDE.md` at workspace root, short. Stack knowledge is loaded on demand by the ingestion phase, never imported permanently.
+8. **No context chaining.** One `CLAUDE.md` at workspace root, short. Stack knowledge is loaded on demand by the Legacy Discovery phase, never imported permanently.
 9. **Avoid compaction.** Compaction means tokens were already wasted. Design so it isn't needed.
 
 ### 6.1 Product layer hygiene
@@ -417,9 +417,9 @@ Non-negotiable rules.
 
 The rules from sections 20.2 and 20.3 apply to them, plus:
 
-- Each file has a size cap. At the cap, ingestion consolidates instead of appending: merge overlapping entries, drop what no longer matches the code.
+- Each file has a size cap. At the cap, Legacy Discovery consolidates instead of appending: merge overlapping entries, drop what no longer matches the code.
 - A code map entry is a description of the code as it is now. No history, no "this used to be", no dates, no feature slugs.
-- An entry describing code that no longer exists is deleted the next time that zone is ingested. Ingestion verifies before it trusts.
+- An entry describing code that no longer exists is deleted the next time that zone is mapped. Legacy Discovery verifies before it trusts.
 - A convention is written once. A second feature that observes the same convention does not add a line.
 - **A convention must be true of the repo, and the planner is the one who checks.** Promotion from a `NOTED` line happens at the next plan, never at the end of the run that produced it: the planner is the only agent that already reads both the observations and the conventions. It adds on evidence, it restricts more often than it deletes — "routes live in `routes/`" becoming "routes live in `routes/`, except admin" is the usual correction, and it is safer than erasing — and it deletes only after going to look, never because an observation contradicts a line. An observation triggers a check; it is never itself the proof.
 - **Whatever the planner did to `conventions.md` appears in the plan review**, one line, in Ali's vocabulary. The review is the single human gate; a product-layer edit that slips past it is an unreviewed write to a file every future briefing pays for.
@@ -432,7 +432,7 @@ Rules with no counter behind them are a wish. The whole reason for v2 is that a 
 
 - Per sub-task, `state.json` records: `tokens_in`, `tokens_out`, `tokens_discarded`, `attempts`, `duration_s`.
 - **`tokens_discarded` separates work that landed from work that was thrown away.** `tokens_in` aggregates both, which is why a respawn that redid landed work cost ~890k paid twice and stayed invisible — `attempts` was still 1 by rule. A retry, a convention return (section 4.4) and a respawn all spend tokens on a diff that does not survive, and that number is the one that says whether a check was worth its price.
-- **First-pass rate**, derived not instrumented: the share of sub-tasks done with `attempts == 1`. A convention return spends an attempt, so the count already carries it. The denominator is the sub-tasks that were attempted, because one skipped on a dependency was never briefed and counting it measures the plan instead. It is the brief-quality number — it falls when ingestion is poor — and it costs nothing to compute.
+- **First-pass rate**, derived not instrumented: the share of sub-tasks done with `attempts == 1`. A convention return spends an attempt, so the count already carries it. The denominator is the sub-tasks that were attempted, because one skipped on a dependency was never briefed and counting it measures the plan instead. It is the brief-quality number — it falls when Legacy Discovery is poor — and it costs nothing to compute.
 - Per run, the end report (section 13.2) totals them and breaks them down by phase and by agent role.
 - **Human interventions are counted by the engine, not by Ali.** `state.json` carries an `interventions` list: phase, cause, timestamp, one line each. Eight on run 1, two on runs 2 and 3, all tallied by hand from memory — and autonomy is the pillar tokens and quality are subordinate to. A harness that halves its bill and still needs someone sitting next to it has not improved.
 - `product/cost-log.md` keeps one line per completed feature: slug, total tokens, distinct context, wall time, sub-task count, blocked count, intervention count, discarded tokens, first-pass rate. Append-only, and the only file in the product layer that is allowed to be a log.
@@ -480,7 +480,7 @@ The test drives that rule rather than restating it. Every numeric field in `sche
 | Role | Model | Effort | Why |
 |---|---|---|---|
 | planner | high | high | a bad decomposition is paid all day in wasted attempts |
-| ingestion | mid | mid | reads legacy to extract conventions; a miss propagates into every briefing |
+| legacy_discovery | mid | mid | reads legacy to extract conventions; a miss propagates into every briefing |
 | test-writer | mid | high | a weak test survives its mutation check and protects nothing |
 | worker | mid | mid | the largest spend and the safest experiment: a bad output costs one attempt |
 | reviewer | high | high | the only thing stopping a worker from working around a test, and the only check that the conventions were followed |
@@ -652,7 +652,7 @@ One routine, driven by config:
 The run ends but the feature does not. A client reviewer will ask for changes, and there has to be a way back in that is not "start over".
 
 - The feature folder and its worktree survive delivery. Cleanup stops processes and releases ports; it does not remove the worktree until Ali closes the feature with `harness/bin/close <slug>`.
-- Review feedback re-enters as `harness/bin/revise <slug>`, with the requested changes as input. It runs a short pipeline: plan the changes as new sub-tasks, reuse the existing safety net, implement, QA the affected journey only, commit to the same branch. No re-ingestion, no new branch.
+- Review feedback re-enters as `harness/bin/revise <slug>`, with the requested changes as input. It runs a short pipeline: plan the changes as new sub-tasks, reuse the existing safety net, implement, QA the affected journey only, commit to the same branch. No second Legacy Discovery, no new branch.
 - A revision that touches zones outside the original code map is not a revision. It is a new feature against the same branch, and it says so rather than quietly widening scope.
 - `close` merges nothing. It removes the worktree, releases anything still held, and marks the feature closed in the cost log. Merging stays a human act on the client side.
 
@@ -789,7 +789,7 @@ Runs as its own workflow after delivery. No human validation. Fully autonomous.
 The retro reads frictions from a run on a client's code and pushes the result to a repo every workspace pulls. That is a leak path, and it is the one v1 had to close.
 
 - Nothing the retro writes may name a client, a repo, a service, a domain term, a person, an endpoint, a table or a branch from any client's code.
-- A friction is generalised before it becomes an instruction. "The worker got lost in Acme's billing service naming" becomes "when a stack uses more than one naming scheme for the same concept, record both in conventions.md at ingestion". The fix is about the harness; the example stays behind.
+- A friction is generalised before it becomes an instruction. "The worker got lost in Acme's billing service naming" becomes "when a stack uses more than one naming scheme for the same concept, record both in conventions.md at Legacy Discovery". The fix is about the harness; the example stays behind.
 - A friction that cannot be generalised without naming the client is not an engine change. It goes to `product/conventions.md` in that client's workspace, which never travels.
 - `hygiene.sh` enforces it mechanically: the harness repo is scanned against the client names and stack keys known to the workspace, and a hit fails the retro's commit. Mechanical, because a model asked to check its own writing for leaks will always find the mention essential.
 
@@ -863,7 +863,7 @@ Three saved workflows in `harness/claude/workflows/`, exposed in the workspace a
 - `/harness-retro <slug>`: phase 6.
 
 Inside the scripts:
-- `phase('Ingestion')`, `phase('Safety net')`, `phase('Build')`, `phase('QA')`, `phase('Delivery')` so `/workflows` shows exactly where the run is. This is the "clear overview" requirement.
+- `phase('Legacy Discovery')`, `phase('Safety net')`, `phase('Build')`, `phase('QA')`, `phase('Delivery')` so `/workflows` shows exactly where the run is. This is the "clear overview" requirement.
 - `agent()` per worker with a `schema` so reports come back structured (status, files, decisions, frictions, needs). The script keeps them in variables; the orchestrator context sees only the final summary.
 - The sub-task loop is a JS loop in the script: `for` over ordered sub-tasks, `while attempts < 3`, criteria run by a `qa`-type agent that returns `{pass: boolean, detail: string}`.
 - Use `args` for the slug and for a timestamp (the runtime forbids `Date.now()` in scripts).

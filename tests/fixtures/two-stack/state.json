@@ -123,7 +123,7 @@
     }
   ],
   "accepted_gaps": [],
-  "ingestion": {
+  "legacy_discovery": {
     "stacks": [
       "backend",
       "frontend"
