@@ -14,6 +14,7 @@ REASONS = {
     "needs": "it needs an answer, below",
     "missing_file": "it needed a file outside its list",
     "review": "the review found it not ready",
+    "convention": "the review found it written unlike the rest of the repo",
     "error": "the run lost track of it",
     "runtime": "the runtime declined to start its agent twice; a relaunch retries it",
     "unstable": "the run died on it three times",
@@ -83,6 +84,9 @@ def build_report(ws, slug):
     assumptions = ["- " + e["assumed"] for e in entries]  # one plain line each; the reasoning stays in spec-gaps.md (13.2)
     if state["kind"] != "service" and cfg.get("design", {}).get("comparable", True) is False:
         assumptions.append("- The design cannot be compared pixel for pixel, as the config declares, so no visual check ran.")
+    # What a sub-task saw that the plan could not: evidence, and it travels no further than this report until a
+    # planner promotes it (5.5).
+    assumptions += ["- " + s["noted"] for s in state["subtasks"] if s.get("noted")]
     lines += assumptions or ["None recorded."]
     agents = state.get("cost_by_agent", {})
     if agents:

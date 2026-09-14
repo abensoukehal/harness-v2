@@ -16,7 +16,8 @@
     "last_error": { "type": "string", "minLength": 1, "maxLength": 2000 },
     "reason": { "enum": ["oracle", "budget", "environment", "missing_file"] },
     "stack": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
-    "ask": { "$ref": "#/$defs/ask" }
+    "ask": { "$ref": "#/$defs/ask" },
+    "noted": { "$ref": "#/$defs/noted" }
   },
   "allOf": [
     { "if": { "properties": { "status": { "const": "done" } } }, "then": { "required": ["lines_added"] } },
@@ -27,6 +28,13 @@
   ],
   "$defs": {
     "strings": { "type": "array", "items": { "type": "string" } },
+    "noted": {
+      "description": "One observation the sub-task made about the ground, capped here rather than in the prompt (5.5).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[^/`\\n]+$"
+    },
     "plain": {
       "type": "string",
       "minLength": 1,

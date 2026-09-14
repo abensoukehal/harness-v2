@@ -64,6 +64,24 @@ class Report(unittest.TestCase):
         run("report", "hello", ws=self.ws)
         self.assertEqual((self.ws / "product/cost-log.md").read_text().count("hello |"), 1, "cost line appended once")
 
+    def test_an_observation_surfaces_under_assumptions(self):
+        state = load_state(self.ws, "hello")
+        state["subtasks"][0]["noted"] = "orders carry a soft delete flag the plan does not mention"
+        state["subtasks"][1]["noted"] = "the tax rate is read from a second table"
+        save_state(self.ws, "hello", state)
+        text = run("report", "hello", ws=self.ws).stdout
+        block = text.split("Assumptions I made.")[1].split("What it cost.")[0]
+        self.assertIn("- orders carry a soft delete flag the plan does not mention", block)
+        self.assertIn("- the tax rate is read from a second table", block, "a blocked sub-task saw ground too")
+        self.assertIn("- Orders export as CSV", text.split("What didn't land.")[0], "an observation is not a status")
+
+    def test_a_convention_return_reads_as_plain_words(self):
+        state = load_state(self.ws, "hello")
+        state["subtasks"][1].update(reason="convention", last_error="the query belongs in the controller")
+        save_state(self.ws, "hello", state)
+        text = run("report", "hello", ws=self.ws).stdout
+        self.assertIn("- The export button shows on the orders screen: the review found it written unlike the rest of the repo", text)
+
     def test_every_subtask_lands_in_exactly_one_block(self):
         state = load_state(self.ws, "hello")
         state.update(phase="safety_net", delivered=False)

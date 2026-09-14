@@ -96,11 +96,11 @@ stacks:
       lint: pnpm lint
       typecheck: pnpm tsc --noEmit
       test: pnpm test
-    env_files: [.env, .env.local]   # resolved from workspaces/<client>/secrets/frontend/, later entries winning
-    secrets: [SESSION_SECRET]       # the keys the scrubber covers and the floor applies to; the rest is config
+    env_files: [.env, .env.local]   # each resolved from workspaces/<client>/secrets/<stack>/, later wins
+    secrets: [DATABASE_URL, API_KEY]  # only these are scrubbed; everything else in the env files is config
     dev_url: http://localhost:${PORT_FRONTEND}
     depends_on: [backend]
-    health:                         # a list; every entry must pass
+    health:
       - log: "ready on"
     health_timeout_s: 120
   backend:
@@ -112,15 +112,13 @@ stacks:
       dev: python manage.py runserver 0.0.0.0:${PORT_BACKEND}
       test: pytest
       lint: ruff check .
-    env_files: [.env]
-    secrets: [DATABASE_URL, DJANGO_SECRET_KEY]
     dev_url: http://localhost:${PORT_BACKEND}
     logs: stdout            # or a file path, or a docker container name
     depends_on: [db]        # start order; every name here must be a declared stack
-    health:                 # ready means every entry passes, not that the process exists
-      - log: "Starting development server"
-      - http: http://localhost:${PORT_BACKEND}/healthz   # a full URL; a bare port is refused at validation
+    health:                 # ready means every check passes, not that the process exists
+      - http: http://localhost:${PORT_BACKEND}/healthz   # a full URL; the bare form passes validation and dies at phase 4
         expect_status: 200
+      - log: "migrations applied"   # a legacy stack is ready when several things are true; one check over-declares
     health_timeout_s: 180
     seed: python manage.py loaddata fixtures/seed.json
   db:                       # infrastructure is a stack. Anything the run starts,
@@ -134,10 +132,10 @@ stacks:
   # mobile, ai: same shape, optional
 
 delivery:
-  base_branch: develop      # branch to start from: one branch, or one per repo — {api: develop, mobile: main}
-  target_branch: develop    # branch the PR/merge goes to: same two shapes
+  base_branch: develop      # branch to start from
+  target_branch: develop    # branch the PR/merge goes to
   branch_prefix: feature/
-  mode: branch              # branch | direct_merge
+  mode: branch              # branch | direct_merge — 'branch' pushes and stops; nothing here opens a PR
   commit_author:
     name: Ali <last name>
     email: ali@...
@@ -159,18 +157,13 @@ test_runner:
 
 Required per stack: `commands.dev`, `health`, `health_timeout_s`. Phases 4 and 5 need every stack running and need to know when it is ready, so a stack missing any of the three fails validation instead of failing at hour two.
 
-`health` is a list and every entry must pass. One check is rarely the truth about a legacy stack: a port is open before migrations have run, and a ready line appears before the first request succeeds. The three kinds are unchanged. An `http` entry takes a full URL, because that is what the run opens; a bare port is refused at validation with the fixed form in the message.
-
-`env_files` is a list, each name resolved from `secrets/<stack>/`, later entries winning, so a base file and a local override read the way the client's own tooling reads them. `secrets` names the keys the scrubber covers. Only a declared key carries the 8-character floor: a real env file is mostly `DEBUG=1`, a port and a timezone, and flooring those would refuse every legacy config on values that are not secrets at all.
-
 `repo` and `path` are null together or not at all, and only for a stack the harness starts but never edits, such as a database container. A repo-less stack gets no worktree and runs from the workspace root, and a plan sub-task cannot target one. A sub-task that needs to change it is a client infrastructure change, which is not something this system delivers.
 
-Validation runs in two passes: schema first, then cross-field checks (paths under their declared repo, `depends_on` names exist and do not cycle, `${PORT_*}` references resolve, an `http` health entry is a full URL, every declared secret is present in the stack's env files and over the floor, a declared `notify` event has a `chat_id_ref` and both Telegram files under `secrets/`, test keys are declared stacks, `client_tests.<stack>` and `stacks.<stack>.commands.test` agree, worktree paths match `.worktrees/<feature>/<repo>`). A declared event with nothing behind it is refused here rather than becoming two frictions on every run that say nothing about the feature. Cross-field checks only run once the schema pass is clean, so a badly broken file takes two rounds to fully diagnose. That is the right order, and the validator says which pass it is reporting.
+Validation runs in two passes: schema first, then cross-field checks (paths under their declared repo, `depends_on` names exist and do not cycle, `${PORT_*}` references resolve, test keys are declared stacks, `client_tests.<stack>` and `stacks.<stack>.commands.test` do not contradict each other, worktree paths match `.worktrees/<feature>/<repo>`). Cross-field checks only run once the schema pass is clean, so a badly broken file takes two rounds to fully diagnose. That is the right order, and the validator says which pass it is reporting.
 
 
 budget:
-  tokens_per_feature: 3600000   # measured, not guessed: what a run costs before its sub-tasks
-  tokens_per_subtask: 1250000   # measured; budget is the pair against the plan's count, overrun is a harness defect, not a stop
+  tokens_per_feature: 2000000   # overrun is a harness defect, not a stop
 
 qa:
   max_fixes: 10                 # phase cap; past it, deliver with documented gaps
@@ -245,6 +238,7 @@ Work:
 
 - **Parse-time check on every criterion's verb.** A criterion naming a runner the stack config does not define (`browser …` where no browser command exists) is a parse failure at second zero, quoting the line. Otherwise it becomes a sub-task that cannot pass, discovered hours later by a worker who then writes something else under that name.
 - Audit the spec while planning. Every time a sub-task needs a fact the spec and design do not state, write the question **and the answer the planner chose** into `spec-gaps.md`: what was missing, what was assumed, and what it affects. Both halves are required. A gaps file holding only questions produces a report whose "Assumptions I made" section lists things nobody assumed, which is worse than an empty section because it reads as disclosure. This is not a blocker list, it is a disclosure list.
+- **Every answered gap names the sub-task and criterion that pins it.** An assumption with nothing testing it is decoration: it carries the authority of a decision and the force of a comment. Run 3 recorded "only `archived=1` shows every item", shipped `req.query.archived ? …` so `?archived=0` returned everything too, passed QA and reported the assumption to Ali as fact. The parse refuses a gap entry whose `Pinned:` field does not resolve to a criterion that exists. If an answer cannot be expressed as a criterion, it was not an answer — it goes back to Ali as a design question.
 
 - Keep the plan bounded: **20 sub-tasks maximum**. A feature that needs more is more than one feature, and saying so at the checkpoint costs a conversation. Discovering it at hour four costs the run.
 
@@ -257,15 +251,14 @@ The plan is the only thing a human touches, so the handoff cannot be ambiguous.
 - **`plan.md` is the source of truth.** Ali edits markdown, not JSON, and he edits it freely: reword a goal, drop a sub-task, change a file list, reorder, adjust a criterion.
 - `/harness-build` parses `plan.md` at start and writes the sub-task list into `state.json` from it. The plan is never written back to `plan.md` by the build.
 - The parse is strict. A sub-task missing a required field, or a criterion that is not one of the kinds in section 5.1, fails the build immediately with the offending line quoted. Failing at second zero is the cheapest possible failure, and a silently misread plan is the most expensive.
-- **Shape is part of the parse.** Three refusals, each about a sub-task that is really several: more than five criteria on one sub-task; more than one stack on one sub-task, whether named in `stack:` or reached through a file outside that stack's repo; a cycle in `depends_on`.
-- **Dependencies are declared, never inferred.** `depends_on` names sub-task ids, forward or backward, and the order of blocks in the file carries nothing. `bin/next` reads the declaration. A plan Ali reorders while reading it means exactly what it meant before.
 - On resume, `state.json` wins for what is already done. `plan.md` is not re-parsed mid-run; editing it during a run has no effect until the next launch.
+- **Each sub-task declares its dependencies** by sub-task id, and its stack. `bin/next` needs both anyway; declaring them also makes the shape of the plan inspectable before a single token is spent building it.
+- Three limits, refused at parse: **at most 5 criteria** on one sub-task, **exactly one stack** per sub-task, and **no cycle** in the dependency graph. A sub-task with seven criteria is two sub-tasks, and one spanning three stacks is a decomposition that ignored the boundary the worktrees are built on. These are not advice to the planner: a plan that breaks them does not run, so the planner cannot produce the bad plan rather than being coached out of it.
 
 #### 4.2 Why the gaps list exists
 
 In v1 a silent spec produced a stop, and the run waited for Ali. In v2 the build cannot ask, so a silent spec produces a silent assumption instead. That is worse, not better. The gaps list moves the cost back to the one moment a human is already reading, where answering costs a minute instead of a rerun.
 
-- **Every answer is pinned by a criterion.** An entry carries `Pinned:`, naming a sub-task and one of its criteria, and the parse refuses an entry whose `Pinned:` resolves to no criterion in `plan.md`, quoting the line. An assumption nothing runs is a decision the run never checks, and it reaches the report as disclosed fact all the same. An answer the planner cannot express as a criterion is not an assumption: it goes to Ali as a design question, not into this file.
 - A gap Ali answers is folded into the plan before build starts.
 - A gap he leaves alone stands as the recorded assumption. The build proceeds on it and does not revisit it.
 - Gaps that recur across features are a spec-template problem, and the retro says so.
@@ -280,7 +273,7 @@ Work:
 
 Exit: the client baseline is recorded, the full safety net passes on the base branch, and every zone survived its mutation check.
 
-**The net is frozen after this phase.** Freezing is a commit, not an instruction: `bin/net freeze` commits `product/tests/` in the product repo and records the sha as `net_commit` in state. `bin/net check` runs at every relaunch and refuses when the tree differs, or when a run past this phase has no freeze behind it. A relaunch still inside the safety net is allowed to have none: sub-tasks exist from the parse, and this phase is where the net is written and frozen. Refusing there locks a phase-3 refusal out of its own retry, which is the one relaunch the phase exists to serve. `/harness-build` refuses to start on that check. No worker, reviewer or QA agent may edit a file under `product/tests/`. A test that looks wrong during build is a BLOCKED sub-task with `reason: oracle`, never an edit. This is what makes the net mean anything; without it the loop reaches green by moving the target.
+**The net is frozen after this phase.** Freezing is a commit, not an instruction: `bin/net freeze` commits `product/tests/` in the product repo and records the sha as `net_commit` in state. `bin/net check` runs at every relaunch and refuses when the tree differs, or when sub-tasks exist with no freeze behind them **past the safety-net phase**. Before it, an unfrozen net is the normal state, and treating it as an error deadlocks the run against itself: a phase-3 refusal leaves exactly that state behind — sub-tasks written, nothing frozen — so the refusal locked out its own retry and the state had to be cleared by hand. A guard that blocks the recovery from the failure it guards is worse than no guard. `/harness-build` refuses to start on that check. No worker, reviewer or QA agent may edit a file under `product/tests/`. A test that looks wrong during build is a BLOCKED sub-task with `reason: oracle`, never an edit. This is what makes the net mean anything; without it the loop reaches green by moving the target.
 
 ### Phase 4: Implementation loop
 
@@ -294,6 +287,7 @@ loop:
   if pass → break
   if attempts == 3 → mark BLOCKED, record why, break
 self-review pass (section 4.3)
+convention review (section 4.4)
 reduction pass (section 12)
 run safety net + sub-task criteria again
 commit (section 9 rules)
@@ -306,6 +300,23 @@ If a sub-task is BLOCKED and later sub-tasks don't depend on it, continue. If th
 #### 4.3 Self-review (adversarial)
 
 Not a human-style code review. The worker rereads its own diff hunting for: edge cases not covered by the criteria, missing error handling on the paths the spec cares about, dead code, hardcoded values, and gaps between what was implemented and what the spec asked. Fix what it finds, rerun criteria.
+
+#### 4.4 Convention review
+
+The reviewer runs at `model: high` and `effort: high` and costs about a million tokens a run to answer one question: did the worker work around a test. That mandate is defensive and it does not overlap with implementation quality. `conventions.md` is loaded into every briefing and **nothing anywhere checks that it was followed**.
+
+So the question widens by one clause, on the same diff, in the same pass, at no extra spawn: does this code cheat, and **does this code belong**. Is the route declared where routes are declared, does the error path follow the repo's shape or invent one, does the naming match what is already there. Clean code in a dirty repo is a graft, and a graft is the quality defect this is for.
+
+The reviewer is the only agent that can ask it. QA sees the finished feature against criteria, all sub-tasks merged, after the loop can still act. The reviewer sees one diff while a retry is still cheap.
+
+Two constraints, and both are load-bearing:
+
+- **The verdict stays binary.** Return to the worker with a reason, or pass. A reviewer that can say "acceptable but not ideal" has invented a state the loop cannot spend, and it will be spent by ignoring it.
+- **A convention return requires the criteria to be green already.** Otherwise two signals arrive in one turn and the worker cannot tell which to fix first.
+
+A convention return counts as an attempt, like every other return. An uncounted loop is an unbounded loop, and the three-attempt ceiling is the only thing between a review pass and a six-hour run.
+
+The convention being enforced must be **true of the repo as it stands**, not of good practice. If the legacy puts business logic in controllers, the convention says business logic is in controllers. The harness is not here to improve the client's architecture, it is here to land a feature that does not stand out in the diff.
 
 ### Phase 5: Global QA
 
@@ -369,6 +380,22 @@ If the behaviour cannot be expressed as properties over examples, it is not a bu
 
 Three attempts per sub-task criterion. On the third failure: BLOCKED, reason recorded in `state.json` with the last error (truncated to ~10 useful lines), and the run continues. Ali sees blocked items in the final report and in the communication protocol (section 13).
 
+### 5.5 The discovery channel
+
+The net is frozen at phase 3, from a plan written by an agent that read a code map and never saw the ground. On legacy, a worker in phase 4 learns things the planner could not have known. Today it has two exits: pass the criterion as written, or BLOCKED with `reason: oracle`. Both are wrong for the common case. The criterion is not false, it is narrow — and blocking a sub-task over a narrow criterion throws away the work, while passing it silently is how a run shipped a filter that returned everything against its own stated assumption.
+
+Third worker result, alongside done and blocked: **`NOTED: <one line>`**. The sub-task proceeds, the code is written, the criteria run unchanged. The line lands in `decisions.md` and surfaces in the end report under assumptions.
+
+Three properties, and they matter more than the idea:
+
+- **It never touches the net.** No edit, no proposed edit, no action. The worker writes a sentence. `product/tests/` stays untouchable exactly as section 3 states.
+- **It never changes the sub-task status.** A `done` with an observation is `done`. A status that means "done, but" is a soft block, and nothing downstream knows what to do with one.
+- **It is capped at one per sub-task**, one line, under 160 characters, no path and no code — the same form as an assumption, for the same reason. A worker with three things to say has nothing to say, and an uncapped channel becomes build warnings: present, ignored, eventually invisible.
+
+What it is for, and this is the whole point: the observation is **evidence, not a conclusion**. It does not travel to the next feature by being written down. It travels by being promoted — the planner checks it against the repo at the next plan, and if it holds it becomes a line of `conventions.md`, which every briefing already loads. An observation nobody promotes dies in a report, and that is the correct outcome for most of them.
+
+It is not a channel to the retro. The retro works on the engine; an observation describes one client's repo. That separation is the harness/product line the whole design rests on.
+
 ## 6. Context economy
 
 Non-negotiable rules.
@@ -394,6 +421,9 @@ The rules from sections 20.2 and 20.3 apply to them, plus:
 - A code map entry is a description of the code as it is now. No history, no "this used to be", no dates, no feature slugs.
 - An entry describing code that no longer exists is deleted the next time that zone is ingested. Ingestion verifies before it trusts.
 - A convention is written once. A second feature that observes the same convention does not add a line.
+- **A convention must be true of the repo, and the planner is the one who checks.** Promotion from a `NOTED` line happens at the next plan, never at the end of the run that produced it: the planner is the only agent that already reads both the observations and the conventions. It adds on evidence, it restricts more often than it deletes — "routes live in `routes/`" becoming "routes live in `routes/`, except admin" is the usual correction, and it is safer than erasing — and it deletes only after going to look, never because an observation contradicts a line. An observation triggers a check; it is never itself the proof.
+- **Whatever the planner did to `conventions.md` appears in the plan review**, one line, in Ali's vocabulary. The review is the single human gate; a product-layer edit that slips past it is an unreviewed write to a file every future briefing pays for.
+- Adding is ordinary, deleting is rare. A missing convention costs a worker one turn of looking. A false one makes it write wrong code with confidence, and nobody sees that go by.
 - `hygiene.sh` runs over the product layer too, with the same word list.
 
 ### 6.2 Measurement
@@ -401,29 +431,15 @@ The rules from sections 20.2 and 20.3 apply to them, plus:
 Rules with no counter behind them are a wish. The whole reason for v2 is that a feature costs two to three five-hour windows, so the cost is a tracked number, not an impression.
 
 - Per sub-task, `state.json` records: `tokens_in`, `tokens_out`, `attempts`, `duration_s`, `lines_added`.
-- **Two token numbers, never one.** `tokens_in` sums every turn's input, so an agent's context is counted once per turn it takes; `tokens_distinct` counts it once. They rank the roles differently, and the ranking is the whole point: a fifty-turn agent is the largest number under the first and a small one under the second. Where the context is actually going is what the second says, and that is the number to work from.
 - Per run, the end report (section 13.2) totals them and breaks them down by phase and by agent role.
-- **Every turn carries a class.** A turn is `locate` (a grep, glob or find, whose result is paths and line numbers), `read` (file content into context), `write`, or `other`; a turn that does two of them takes the later class, so a turn that greps and then reads is a read. `cost_by_agent` holds the four counts per agent, and the by-role line prints the turns and the locate share beside the tokens.
-- **The locate share is the comparable number.** It is how many turns a sub-task spends finding its ground before it reads anything, and it holds across features of different sizes and across repos because it does not depend on what the sub-task goes on to write. Inside one run, same engine and same feature, the spread in locate share between sub-tasks measures how uneven the repo is, with no second run to compare against.
-- `product/cost-log.md` keeps one line per completed feature: slug, total tokens, distinct context, wall time, sub-task count, blocked count. Append-only. It and `product/frictions.md` (14.3) are the only files in the product layer that accumulate rows.
+- `product/cost-log.md` keeps one line per completed feature: slug, total tokens, wall time, sub-task count, blocked count. Append-only, and the only file in the product layer that is allowed to be a log.
 - The retro compares this run against the last three. A phase whose share grew without the feature growing is a friction to name.
-- **The budget follows the plan, not the last run.** `budget.tokens_per_feature` is what a run costs before any sub-task work — planning, the safety net, QA, delivery — and `budget.tokens_per_subtask` is the rate per sub-task in the plan. The budget for a run is the first plus the second times the plan's sub-task count. Both are set from a measured run, never invented: a flat number taken from a two-sub-task run passes every larger plan, and a number below what the engine actually spends flags every run. Either way the flag measures nothing.
-- The overrun is counted once per run, over the run's own total. A per-sub-task check reports a feature that came in under budget as a string of overruns.
 - A run that exceeds `budget.tokens_per_feature` from the config does not stop. It flags the overrun in the report and the retro treats it as a defect in the harness, not in the feature.
+- **The number was invented and the first successful run settled it.** Run 3 delivered two sub-tasks for 11.77M input tokens against a configured 600k. A budget wrong by a factor of twenty flags every run, and a flag that always fires is read as noise rather than as a defect. Set it from measured runs, and re-set it whenever the io count moves.
+- **The budget scales with the plan, not with the last run.** 11.8M bought two sub-tasks on a throwaway repo; a fifteen sub-task feature on a client repo will pass a flat 12M cap and mean nothing by it. A run has a fixed cost no plan size changes and a marginal cost per sub-task, so the config carries both: `tokens_per_feature` for the fixed part, `tokens_per_subtask` for the rate, and the check is the sum against the plan's own count. A worker's own budget comes from the rate directly — dividing the feature budget by the sub-task count handed a fifteen sub-task worker a fifteenth of a budget measured on two.
 
-### 6.3 Model and effort per role
-
-The model an agent runs on and the reasoning effort it runs at are config, not script. `agents:` in `client.config.yaml` holds one entry per role — `planner`, `test-writer`, `worker`, `reviewer`, `qa`, `retro` and `io`, the last covering every mechanical step that still goes through an agent — and each entry sets `model` and `effort`.
-
-- **Static per workspace.** Nothing picks a model at runtime from the size of a sub-task. A run that chose its own models could not be compared against the run before it, and 6.2 exists to make runs comparable.
-- **`inherit` is a value, not an omission.** It means the session's own model or effort. It is the default for every role except `io`, which defaults to `effort: low`, because those steps run a command and copy its output.
-- **Every spawn passes the pair**, in all three workflows. A role that reads the config in one workflow and not another produces two costs for one role and no way to tell them apart.
-- **What ran is recorded, not what was asked for.** `cost_by_agent` stores the model and the effort read from the agent's own transcript alongside its token counts. Tokens without the model that spent them measure nothing, and a config that was overridden somewhere would otherwise never show up.
-- **Neither setting moves an io step.** An io agent runs one command and copies the output, so its cost is the context a spawn carries, not the thinking it does: measured at ~52,000 tokens whatever it is asked, against ~150 for the prompt. The two levers there are the number of spawns and what a spawn is handed by the runtime, and `model` and `effort` are neither.
-- **`io` is an agent with tools, not the default subagent.** A spawn with no `agentType` loads the whole skill catalogue, the deferred tool catalogue and the MCP instruction blocks — measured at ~43,500 tokens per spawn that a `Bash` step never reads. `claude/agents/io.md` declares `tools: Bash`, and every mechanical spawn in all three workflows names it.
-- Commands with no agent between them share one spawn. A batch returns one entry per command and the script names the one that refused; a batch whose failure is ambiguous costs more than the spawn it saved.
-- The retro may propose a change to this block. It is the only tuning channel, and 6.2's per-role numbers are what it argues from.
-
+- **The fixed part is the io bill, and it is most of the run.** Run 3 split 13.2M into 10.3M fixed and 2.9M across its two sub-tasks: 78% of a successful feature was spent before any code was written, and it will be spent identically on a feature ten times the size. Every argument for reducing the io count is in that ratio, and no plan, model or effort setting moves it.
+- **The overrun check is per run, not per sub-task.** Run 3 fired it on every sub-task, recording 24 lines against a 60-line cap as an overrun.
 ## 7. Agents
 
 Agents are defined by **role**, not technology. The catalogue lives in `harness/claude/agents/`:
@@ -431,7 +447,7 @@ Agents are defined by **role**, not technology. The catalogue lives in `harness/
 - `planner`: phases 1-2.
 - `test-writer`: phase 3, and criteria test files.
 - `worker`: phase 4 implementation. **One agent, not one per stack.** With the role, the stack commands and the behaviour contract all arriving in the briefing, four stack-named workers were four copies of one file, which is how v1 reached 370,000 characters of doctrine. The stack is an input, not an identity.
-- `reviewer`: self-review and reduction pass (can be the same worker, second prompt, or a separate agent for a cleaner adversarial stance).
+- `reviewer`: self-review, convention review (section 4.4) and reduction pass (can be the same worker, second prompt, or a separate agent for a cleaner adversarial stance).
 - `qa`: phase 5.
 - `retro`: phase 6.
 
@@ -539,8 +555,8 @@ Running a client's stacks needs their env files, database and service credential
 - Credentials live in `workspaces/<client>/secrets/`, outside git, outside the product layer, never in `client.config.yaml`. The config references them by name, not by value.
 - The harness injects them into stack processes as env vars at start. No agent ever reads the secrets directory, and no briefing quotes a value.
 - Output of stack and seed commands is scrubbed for those values before it enters any context, so a service that echoes its connection string on boot cannot leak it into a transcript.
-- **The scrubber has a floor and a boundary.** The config names which keys are secret; every other key in an env file is ordinary configuration, neither scrubbed nor floored. A declared value under 8 characters fails validation, named by its key, rather than being substituted: a short value collides with ordinary output and shreds it. A value is replaced only on a token boundary, so a secret that happens to match part of a path or an identifier does not take the rest of it with it. A scrubber that mangles every friction it touches is turned off by the first person who reads one.
 - **The scrubber covers what the harness runs, not what an agent runs.** A command an agent issues itself in bash reaches that agent's transcript directly, and no layer below can intercept it. What covers that gap instead: agents never read the secrets directory, briefings never quote a value, and every stack command with a secret in it is invoked through the harness rather than composed by an agent. State the limit rather than trusting a guarantee the mechanism does not provide.
+- **The scrubber needs a floor and a boundary.** A secret value shorter than 8 characters, or one that matches no token boundary, is not substituted: in run 3 a short secret happened to equal a path segment and every workspace path in the log came back redacted. Over-redaction is not a leak, but a report that is entirely black is a report nobody reads, which costs the same in the end. The floor applies to declared secrets only: `secrets:` names which keys are scrubbed, and a declared secret under 8 characters fails validation by key. Everything else in an env file is config and is neither scrubbed nor floored — a legacy `.env` is full of `DEBUG=1`, `ENV=dev` and bare ports, and a scrubber that treats them as secrets refuses every real setup before the first plan.
 - Test data is seeded and fake. A run never touches a client's real database, staging included.
 - Deleting a workspace deletes the secrets with it.
 
@@ -564,10 +580,9 @@ One routine, driven by config:
 **Delivery requires something to deliver.** No push, no merge, and `delivered` stays false unless at least one sub-task is done and the branch diff against `base_branch` is non-empty. A run that completed nothing pushed an empty branch, recorded `delivered: true` and reported "done with gaps, open a PR" — a false green produced by counting only *blocked* sub-tasks against success. Skipped counts too: any sub-task not done means the status is `partial` at best, and zero done means `nothing landed`, whatever the reason was. Four statuses, no others: `done`, `done with gaps`, `partial`, `nothing landed`. A status vocabulary with a gap in it is where a false green hides.
 
 - Create `${branch_prefix}<slug>` from `base_branch` at run start.
-- `base_branch` and `target_branch` are one branch for every repo, or a map keyed by repo name. Clients whose repos were not born together do not share a mainline, and a single string makes such a repo unbranchable. A map must name every repo the stacks live in: a repo missing from it has no branch to cut from, which the run would otherwise discover at the worktree.
 - One commit per validated sub-task (section 9.2).
 - At the end of phase 5:
-  - `mode: branch` → push the branch, then stop. Ali opens the PR himself and handles the client-side review and merge.
+  - `mode: branch` → push the branch, then stop. Ali opens the PR himself and handles the client-side review and merge. It was called `pr` and opened none; a mode named for a thing it does not do is a false green in the config.
   - `mode: direct_merge` → merge into `target_branch`, push. Global QA is the only gate.
 - Never force-push. Never touch `target_branch` in `pr` mode.
 
@@ -611,14 +626,14 @@ Phases 4 and 5 need the stacks running. On legacy code a stack can take a minute
 
 Several features can run at once inside one workspace. Two runs must never share a working tree.
 
-- Worktrees are created **per git repository, not per stack**. Several stacks can live in one repo (a monorepo is the common case in legacy clients), and `client.config.yaml` says which repo each stack belongs to via `repo`. One worktree per repo the feature touches: `git -C repos/<repo> worktree add ../../.worktrees/<slug>/<repo> -b <branch_prefix><slug> <that repo's base_branch>`. Stack paths resolve inside it.
+- Worktrees are created **per git repository, not per stack**. Several stacks can live in one repo (a monorepo is the common case in legacy clients), and `client.config.yaml` says which repo each stack belongs to via `repo`. One worktree per repo the feature touches: `git -C repos/<repo> worktree add ../../.worktrees/<slug>/<repo> -b <branch_prefix><slug> <base_branch>`. Stack paths resolve inside it.
 - A monorepo therefore gets one branch and one commit stream for the whole feature, even when the feature spans backend and frontend. Sub-tasks still commit one at a time.
 - The worktree paths, not the checkout paths, are what the run's commands and briefings point to. `state.json` records them.
 - Ports are allocated per feature (already dynamic), so parallel dev servers don't collide.
 - `product/features/<slug>/` is per feature, so state, plan and retro never conflict.
 - `product/conventions.md` and `code-map/` are shared and mutable. Concurrent runs append to them through a single-writer lock (`product/.lock`); a run that can't take the lock queues its update to the end of its phase rather than blocking.
 - Cleanup removes each worktree (`git worktree remove`) along with the processes and ports.
-- Nothing caps concurrent features in config. CPU and the 16-agent runtime cap are the real limits, and a setting nothing reads only looks like one.
+- Concurrent features per workspace are bounded by CPU and the 16-agent runtime cap; there is no config knob, because the one that existed had no reader.
 
 ## 12. Code verbosity control
 
@@ -680,26 +695,19 @@ Same rule as section 13: everything technical lives on the `Detail:` line. The r
 
 ### 13.3 The plan review
 
-The other artefact Ali reads, at the one checkpoint where a minute of his time replaces a rerun. It is rendered from the parsed plan by a tool. No agent writes it: a model summarising its own plan reports the plan it meant to write.
+Phase 2 is the only human decision in the pipeline and it commits the whole night's budget, yet it had one line of protocol against the end report's four blocks. `plan.md` is written to be parsed by phase 3, not read by Ali on a phone at midnight — so the review is its own artefact, generated by a tool from the parsed plan, with no model involved.
 
-```
-<feature> — plan ready
+**A short summary, pushed.** Ali's own vocabulary from the feature request, never the planner's names for things: same rule as section 13, and checked the same way — no path, file name, class or function name above the `Detail:` line, or the render is refused. Plus three numbers that let a plan be rejected without opening it:
 
-- <goal>
-- <goal>
+- how many sub-tasks
+- the highest criteria count on any one sub-task
+- how many sub-tasks touch more than one stack
 
-<n> sub-tasks, at most <n> criteria on one, <n> reaching into more than one stack.
+The second and third are the ones that catch a bad decomposition, and they catch it **before** the run rather than in a retro afterwards. A max of seven criteria earns "re-split" in ten seconds. Since section 4.1 refuses those plans outright, these numbers are there to show Ali how close to the edge a passing plan sits.
 
-A. Approve, and the build runs it.
-Anything else you write is an edit to the plan, and this renders again.
+**A graph, in the feature folder.** Sub-tasks and their declared dependencies as Mermaid — text, so a tool emits it, it commits beside the plan, and Telegram and GitHub render it with nothing installed. Five arrows into one sub-task, two unrelated clusters, a chain where a graph was expected: all visible at a glance and none of them visible in a list. Where prose gets long, the diagram is the artefact, and the message links to it.
 
-Detail: <plan.md> <plan.mmd>
-```
-
-- The summary is the sub-task goals, in the feature's own vocabulary. Every line above `Detail:` passes the same check the end report passes: no path, no file name, no class or function name. A goal that fails it fails the review, and the plan goes back to the planner.
-- The three numbers are the shape of the plan, not its quality. They are the numbers that predict a bad run: too many sub-tasks, a sub-task carrying too much, a sub-task spanning stacks.
-- The graph is Mermaid, written to `plan.mmd` in the feature folder and linked from `Detail:`. What waits on what is the one thing a list of goals cannot show.
-- `plan_ready` pushes this message, never `plan.md`. Answering `A` approves it; anything else is an edit Ali makes to `plan.md`, and the review renders again from what he wrote.
+Ali's answer is A to approve, or free text, which is an edit to `plan.md` and re-runs the render.
 
 ## 14. Retrospective and self-improvement
 
@@ -724,20 +732,32 @@ The retro reads frictions from a run on a client's code and pushes the result to
 - A friction that cannot be generalised without naming the client is not an engine change. It goes to `product/conventions.md` in that client's workspace, which never travels.
 - `hygiene.sh` enforces it mechanically: the harness repo is scanned against the client names and stack keys known to the workspace, and a hit fails the retro's commit. Mechanical, because a model asked to check its own writing for leaks will always find the mention essential.
 
-### 14.3 What may change the engine, and conflict resolution
+### 14.3 What gets changed now, and what waits
 
-A friction is one run's evidence. One run cannot tell a defect from a coincidence, and an engine that changes on every first occurrence accumulates rules written for a run that never repeats.
+Every retro finding is a candidate change to the engine, and v1 reached 370,000 characters of doctrine by accepting all of them. The gate is two mechanisms, not a judgement call, because a retro asked to weigh whether a fix is worth it is a retro that will always say yes.
 
-- `bin/friction <cause-slug> <feature> [<category>]` records the cause in `product/frictions.md`: the slug, how many runs it appeared in, and which. One run counts once however many times it hit.
-- **The category is declared, not read out of the slug.** The retro passes one of the four words or nothing. A rule that spells the category out of a name the retro invented makes safety depend on that name: `secrets-directory-listed` does not contain `secret` as a word, and the leak then waits for a second run. The declared word wins where the two disagree, and a slug that names one of the four still counts when nothing is declared: a wrongly immediate fix costs one early edit, a wrongly deferred one ships the defect.
-- **Four causes change the engine on the first occurrence**: `false green`, `secret`, `delivery`, `guard bypassed`. Not a severity judgement, which a model would have to make and would make differently every time. A match against four words, made by a tool.
-- Everything else waits for a second, distinct run. It stays in `frictions.md` with its count, and the retro names it in `retro.md` as recorded and waiting. Nothing is lost; it is only not yet an instruction.
-- The instruction corpus has a hard cap, and `hygiene.sh` fails the retro's commit above it rather than noting it. A retro that cannot fit its fix under the cap consolidates first, which is section 14.4's rule with a number behind it.
-- The corpus is every character an agent loads, wherever it is written: the two `CLAUDE.md` files, the markdown under `claude/`, and the prompt text built inside the workflow scripts. A prompt assembled in JavaScript is instruction prose reaching an agent; counting only the markdown would cap where prose is filed rather than how much of it a run pays for.
+**Fix now, first occurrence, no counter.** A finding whose cause is one of exactly four things:
+
+- **false green** — the run reported as passed something that did not pass
+- **secret** — a value from `secrets/` reached a transcript, a log or a commit
+- **delivery** — anything that pushed, merged or recorded `delivered` wrongly
+- **guard bypassed** — an existing check was routed around rather than failing
+
+Not a severity assessment: a match against four words. Everything not matching goes to the backlog, whatever it cost.
+
+**The category is declared, not read out of the slug.** `bin/friction` takes it as its own argument, one of the four words or nothing. Matching the four against a name the retro invented makes the safety rule depend on that name's spelling: `secrets-directory-listed` fails to match `secret` and a leak waits for a second run. The two errors here do not cost the same — a wrongly immediate fix costs one early edit, a wrongly deferred one ships the defect to a client — so nothing about this decision is left to string matching. If the declared word and the slug disagree, the declared word wins.
+
+**Everything else waits for a second run.** `bin/friction <cause-slug>` appends or increments a line in `product/frictions.md`: slug, count, runs it appeared in. The retro names the cause; a slug that already exists is a cause already seen, which is what makes the counter count causes rather than files. The cwd defect appeared in a tool in run 1 and in a verify agent in run 2 — two files, one slug, count two. Counted by file it would have been two entries of one and never crossed anything.
+
+**The threshold is two distinct runs.** One number, no estimate. A finding that genuinely hurt once almost always matches one of the four words above, so nothing expensive waits long. The first counterexample arrived in run 4: a runtime-refused spawn was retried after its agent had already landed work, and ~890k tokens were paid twice, invisibly, because `attempts` stays at one by rule. It matches none of the four words and it waits, at count one. That is the rule holding on the first occasion it was inconvenient, which is the only kind of occasion a rule is for. A fifth word is not added for it; if it recurs, the fix is known — a refused spawn checks whether work landed before it is respawned.
+
+**Volume is capped, not advised.** `hygiene.sh` counts the instruction corpus and the retro cannot commit above 40,000 characters. The corpus is every character an agent is handed to read, which is not the same as every markdown file: prompt text built inside a workflow script is instruction prose that reaches an agent without passing the cap. Anything assembled into a prompt counts, wherever it is written. A budget that a template literal walks around is not a budget. A fix that adds prose therefore replaces prose or does not land. The preferred fix is neither: move the work out of an agent and into a tool, which is what every step of the build did on its own — the corpus fell from 23,312 to 22,112 characters across a pass that fixed seven findings.
+
+### 14.4 Conflict resolution
 
 The retro agent has the context a merge algorithm lacks: it knows what it wanted to change and why. On conflict it reads the remote version, reads its own intent, and decides: the remote change already covers the need (abandon own change), or the two are compatible (combine them). Never a blind merge. Always rerun harness tests after.
 
-### 14.4 Harness file hygiene
+### 14.5 Harness file hygiene
 
 These rules apply to every file the retro touches, and to the initial implementation:
 
@@ -746,7 +766,7 @@ These rules apply to every file the retro touches, and to the initial implementa
 - **Edit, never stack.** When a friction concerns a subject that already has an instruction, the retro modifies that instruction. It does not add a new paragraph next to it. Adding a new instruction is allowed only for a subject the file does not cover.
 - Every file has a size cap. Approaching it forces consolidation, not a new file.
 
-### 14.5 Rollback
+### 14.6 Rollback
 
 The retro edits the engine with no human review, and its own tests only cover mechanics: schemas, the commit allowlist, port allocation, briefing assembly. They cannot tell whether a rewritten instruction still works. That is only visible on the next feature, which is why there has to be a way back.
 
@@ -761,17 +781,13 @@ The retro edits the engine with no human review, and its own tests only cover me
 - `harness/bin/rollback [<tag>]` resets the engine to a previous retro tag, defaulting to the newest `retro/*` tag **strictly behind HEAD**. When HEAD itself carries a tag, that tag is the run being rolled back and the target is the one before it. Ali runs it. Rolling back is a revert commit, never a force-push, so no other workspace loses history.
 - A rolled-back change is not retried silently. It goes to `harness/OPEN_QUESTIONS.md`, which the retro creates on first use and never on bootstrap. An empty file that exists is a file every agent loads for nothing. It goes there with what it was trying to fix, so the friction survives even though the fix did not.
 
-### 14.6 Harness tests
+### 14.7 Harness tests
 
 The harness has its own test suite: schema validation for config and state, the commit allowlist, the commit message filter, port allocation and cleanup, briefing assembly, the criteria runner for each kind. The retro runs it before every push.
 
-### 14.7 A test forces the condition it covers
+**A retro test forces the condition it guards.** Its natural instinct is to assert that its fix is present — run 3's overrun test checked only that the friction line mentioned `line_budget`, which passes whether or not the count is per run. That test would have shipped the defect again. A test for a guard drives the input that should trip it and the input that should not, and asserts the difference. Nothing else counts as coverage of a guard.
 
-Every guard the retro adds or repairs carries a test that drives an input reaching the refused branch, and asserts what the guard does with it. A test asserting that the fix is present passes on the defect as well: the retro's own overrun test asserted the friction line named `line_budget`, which held whether the count was per run or per sub-task, and the same defect shipped twice.
-
-The same question applies to guards nobody is changing: what input reaches this branch, and does a test drive that input? A guard whose condition no input can produce passes its test, reads as coverage, and protects nothing. The plan parse refused a dependency cycle while requiring every dependency to name an earlier sub-task, so no plan could ever hold one. Where the answer is that no input can reach it, the guard is either made reachable or removed; a refusal that cannot fire is not a safety rule.
-
-A workflow script is held to the same rule. Every branch a script takes on its own — each refusal, the retry policy, the worker and reviewer outcomes, the run's status — lives in a pure block between `/* decisions:start */` and `/* decisions:end */`, and the test suite lifts that block and calls each function with the input that trips it and the input that does not. Asserting the `throw` is present in the source is presence, not condition: it passes whether or not any run can reach it. A decision lifted with no test that calls it is refused by the suite.
+**And the rule is itself a test.** Workflow decisions are lifted into a named block the suite slices out and calls directly; a lifted name with no caller in the tests, or lifted and then unused by the script, fails the suite. Written as prose this rule holds until the first tired retro. As a test it caught a decision with no call site on its first run. Every rule in this section that can be made to fail a suite should be.
 
 ## 15. Claude Code implementation mapping
 
@@ -790,10 +806,10 @@ Inside the scripts:
 - `agent()` per worker with a `schema` so reports come back structured (status, files, decisions, frictions, needs). The script keeps them in variables; the orchestrator context sees only the final summary.
 - The sub-task loop is a JS loop in the script: `for` over ordered sub-tasks, `while attempts < 3`, criteria run by a `qa`-type agent that returns `{pass: boolean, detail: string}`.
 - Use `args` for the slug and for a timestamp (the runtime forbids `Date.now()` in scripts).
-- Model per stage: strongest model for planner and workers, a smaller model for the criteria runner and log checks if it holds up. The config field is `agents:` (6.3); the retro tunes it from the per-role numbers.
+- Model per stage: strongest model for planner and workers, a smaller model for the criteria runner and log checks if it holds up. Make it a config field so the retro can tune it.
 - Keep `workflowSizeGuideline` at `medium`; workers are sequential by dependency, parallel only for independent sub-tasks (cap at 4 concurrent to protect ports and CPU).
 
-Scripts are pure orchestration, and not by choice: the runtime gives a script no `process`, no `require`, no `fetch`, no `import()` — refused at parse — and no code generation from strings, so `new Function` and `eval` cannot reach out either. A script cannot run a command, read a file or open a socket. Every shell step therefore costs a spawn, which is why 6.3 batches them. `tests/test_workflows.py` records the limit rather than imposing it; what that list still earns on its own is catching `Date.now` and `Math.random`, which break resume, at test time instead of mid-run.
+Scripts are pure orchestration. All filesystem and shell work happens inside agents.
 
 Before editing any workflow script, load `/workflow-authoring`.
 
@@ -828,6 +844,35 @@ Two files the harness maintains so a conversation about the harness can start wi
 - **A friction records the error that caused it.** The runtime-refusal path fired ten times and wrote frictions with no error text; the cause sat in the session log instead. A friction whose message is only that something was refused tells the retro nothing it can act on.
 - **The mechanical steps are the expensive ones.** In run 2 the io agents spent 3.26M of the build's 5.67M input tokens, roughly 105k each, against 1.07M for the test-writer. Steps that parse, render, freeze or decide by rule do not need a model at all, and where they still run through one they are the first place to cut effort. Measure per role before choosing a model per role: the intuition that the thinking agents cost the most is wrong here by a factor of three.
 - **Measure input tokens, not just output.** The dry run spent 1.74M input tokens against 27k output on a single agent. A cost log built from output deltas measures the cheap half and reports a run that burned a window as nearly free, which makes pillar four unenforceable.
+- **Record distinct context beside the per-turn total, because the two rank the roles differently.** Summing input per turn counts an agent's context once per turn it takes, so a long conversation over a small context outweighs a short one over a large context. Run 3: qa took 53 turns and counted 1.77M against 153k of context it actually held; each io agent takes 2 and counts about twice its own. Under the per-turn total io is 36% of the run, under distinct context 75% — the same run, two rankings, and the second is the one that says where to work. Neither number is wrong: the per-turn total is what gets billed, distinct context is what the design controls. A cost log that carries only one of them will send the next pass to the wrong role.
+### 6.3 Model and effort per role
+
+`model` and `effort` are set per agent role in `client.config.yaml`. Static, per workspace. No dynamic selection, no heuristic that guesses from the sub-task: a run whose cost depends on a choice made at runtime cannot be compared to the run before it, which destroys the only measurement that would justify the choice.
+
+| Role | Model | Effort | Why |
+|---|---|---|---|
+| planner | high | high | a bad decomposition is paid all day in wasted attempts |
+| ingestion | mid | mid | reads legacy to extract conventions; a miss propagates into every briefing |
+| test-writer | mid | high | a weak test survives its mutation check and protects nothing |
+| worker | mid | mid | the largest spend and the safest experiment: a bad output costs one attempt |
+| reviewer | high | high | the only thing stopping a worker from working around a test, and the only check that the conventions were followed |
+| qa | mid | mid | runs `journey.md`, a script written at plan time |
+| retro | high | high | it writes the engine every workspace eventually adopts |
+
+Everything else on the pipeline is a tool and takes no model: plan parsing, mutation checks, the freeze, `bin/next`, criteria running, visual diff, delivery, the report, notifications, hygiene. That is eleven of the twenty steps, and per section 6.2 it is also where the tokens went.
+
+**Effort does not touch the io cost, and never will.** Run 3 set io to `low` and its input was unchanged: 3.24M across 28 agents, ~116k each, against the test-writer's 1.13M. Effort governs what a model produces, and the io spend is what it is handed to read. No model or effort setting reaches it. The only two numbers that do are how many io agents run and how much each is given — and the second turned out to be worth almost nothing. Measured across run 3, context above the shared floor totalled 47,674 characters over 28 agents, 3.0%: a spawn costs a fixed ~55k of runtime prefix and attachments whatever it is asked to do, and the prompts themselves are 0.19% of the bill. Trimming what an io agent reads is not a lever. **The count is the only lever the harness owns.**
+
+Not one of the 28 needed a model. Every one runs a command and copies back stdout, an exit code or a JSON document; none resolves an ambiguity, none chooses. They exist as agents for a structural reason rather than a stylistic one: a workflow script has no process and no filesystem, so the only thing in the runtime that can reach a shell is an agent. That is the runtime's sandbox, not a rule of ours: `process`, `require`, `fetch` and `import()` are undefined in a workflow realm and code generation is disabled, verified with zero agents. `test_pure_orchestration` records the limit; deleting it would buy back nothing. What it still earns is catching `Date.now` and `Math.random` at test time instead of mid-run, where they break resume.
+
+**So the lever that remains is what a spawn is, not what it is handed — and the harness already owned it.** A spawn with `tools: Bash` and no skills, no MCP and no deferred tools measured 9,028 tokens against 55,723 for a default subagent running the same commands. The io steps were going through the default agent type with a catalogue of tools none of them could touch. Naming an agent type is a line in the workflow, and it is worth ~43k distinct per spawn, three times what batching saves per spawn removed. Batching and the agent type compose: 28 default spawns to 15 minimal ones is roughly a tenfold cut on the io bill.
+
+**Measured, run 4 against run 3, same feature, engine untouched.** io went from 42 spawns and 5.92M counted to 21 and 707k — an eightfold cut — and the run from 18.6M to 7.7M counted, wall time from 3,819 s to 2,000 s. The floor under a minimal spawn is ~6.7k distinct before a command runs, ~9.8k for a real `bin/state` write with a JSON heredoc: that is the price of existing as an agent, and 21 spawns pay 250k of it. io is now 25% of distinct context, with the worker, planner, reviewer, QA and retro each between 10% and 16%. No role dominates any more; the next lever is not a role. Counted context is 7.8× distinct across the run, and that multiplier is turns — a long conversation over a small context is now the shape of the bill.
+
+**Recalibrate the budget from this run,** not run 3: its fixed part fell with the io count and the run-3 numbers would never flag again.
+
+Defaults are the values above. Lowering one is an experiment on one workspace, over at least three features, judged on tokens **and blocked rate together**: a cheaper worker that blocks one more sub-task per run cost money rather than saving it.
+
 - Criteria runner model. v1: session model; try a smaller one in a later feature.
 - Visual region mapping: hand-made regions file vs derived from Figma node tree. v1: hand-made, exported with the design.
 - Harness in workspace: submodule vs plain clone pinned to a commit. v1: plain clone plus a pinned sha in `state.json`; simpler on the VPS.

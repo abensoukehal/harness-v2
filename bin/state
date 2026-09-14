@@ -23,6 +23,10 @@ def merge(state, patch):
                     by_id[item["id"]] = item
                     continue
                 since = item.pop("_since", None)
+                # One observation per sub-task, capped here and not in the prompt (5.5). The second is dropped, never
+                # refused: the patch carrying it also carries the sub-task's status, and losing that loses the work.
+                if "noted" in target:
+                    item.pop("noted", None)
                 target.update(item)
                 if since is not None:
                     target.setdefault("cost", {})["duration_s"] = max(0, int(time.time()) - int(since))

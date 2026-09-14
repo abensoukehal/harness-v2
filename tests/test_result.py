@@ -35,6 +35,14 @@ class WorkerResult(unittest.TestCase):
             done = validate(dict(BASE, **extra))
             self.assertEqual(done.returncode, 0, "%s: %s" % (extra["status"], done.stderr))
 
+    def test_one_observation_in_the_form_of_an_assumption(self):
+        ok = validate(dict(BASE, status="done", lines_added=12, noted="orders carry a soft delete flag the plan does not mention"))
+        self.assertEqual(ok.returncode, 0, ok.stderr)
+        for line in ["the flag lives in app/models/order.py", "the filter calls `soft_deleted`", "two lines\nof it", "", "x" * 161]:
+            bad = validate(dict(BASE, status="done", lines_added=12, noted=line))
+            self.assertEqual(bad.returncode, 1, line)
+            self.assertIn("/noted", bad.stderr, line)
+
     def test_prose_and_half_shapes_are_refused(self):
         cases = [
             ('"I finished the coupon field and everything passes."', "/"),

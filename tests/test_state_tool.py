@@ -51,6 +51,30 @@ class StateTool(unittest.TestCase):
         self.assertEqual(self.update({"phase": "nope"}).returncode, 1)
         self.assertEqual(self.update("not json").returncode, 1)
 
+    def test_one_observation_per_subtask(self):
+        run("state", "init", "hello", "service", ws=self.ws)
+        base = {"id": "st-01", "stack": "backend", "status": "pending", "attempts": 0, "interruptions": 0,
+                "worktree": ".worktrees/hello/backend", "exit_criteria": [{"kind": "lint"}]}
+        self.update({"subtasks": [base]})
+        first = self.update({"subtasks": [{"id": "st-01", "noted": "orders carry a soft delete flag the plan does not mention"}]})
+        self.assertEqual(first.returncode, 0, first.stderr)
+        second = self.update({"subtasks": [{"id": "st-01", "status": "running", "noted": "the tax rate is read from a second table"}]})
+        self.assertEqual(second.returncode, 0, second.stderr)
+        st = load_state(self.ws, "hello")["subtasks"][0]
+        self.assertEqual(st["noted"], "orders carry a soft delete flag the plan does not mention")
+        self.assertEqual(st["status"], "running")
+
+    def test_an_observation_carrying_a_path_or_code_is_refused(self):
+        run("state", "init", "hello", "service", ws=self.ws)
+        base = {"id": "st-01", "stack": "backend", "status": "pending", "attempts": 0, "interruptions": 0,
+                "worktree": ".worktrees/hello/backend", "exit_criteria": [{"kind": "lint"}]}
+        self.update({"subtasks": [base]})
+        for line in ["the flag lives in app/models/order.py", "the filter calls `soft_deleted`", "two lines\nof it", "x" * 161]:
+            bad = self.update({"subtasks": [{"id": "st-01", "noted": line}]})
+            self.assertEqual(bad.returncode, 1, line)
+            self.assertIn("subtasks/0/noted", bad.stderr, line)
+        self.assertNotIn("noted", load_state(self.ws, "hello")["subtasks"][0])
+
     def test_since_becomes_duration(self):
         run("state", "init", "hello", "service", ws=self.ws)
         self.update({"subtasks": [{"id": "st-01", "stack": "backend", "status": "pending", "attempts": 0, "interruptions": 0,

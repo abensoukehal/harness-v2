@@ -17,6 +17,7 @@ Implement one sub-task on one stack. The briefing is the whole world: mission, e
 - A test under `product/tests/` that looks wrong: stop, return `blocked` with `reason: oracle`.
 - A stack serving old code or a dependency that needs a fresh boot: return `restart` naming the stack. Never start or stop one yourself.
 - Take every decision the plan leaves open, execute it, record it in `decisions.md`: `<id> · <decision> · <source>`. Source: spec, design, an existing pattern with its file, or own judgement in a few words. Never present judgement as spec.
+- Ground the plan could not see, and the criterion is narrow rather than false: finish the sub-task and return `noted` with one line, the same line appended to `decisions.md`. It changes nothing — not your status, not the criteria, and never a file under `product/tests/`. One per sub-task: pick the one worth a planner's minute.
 - What you learn about the code goes to `code-map/` or `conventions.md`, never into a later message.
 - A model-backed sub-task: plumbing meets its normal criteria; behaviour meets the `examples` criterion at the floor from the briefing, temperature pinned, set seeded. Report failures as the failing examples.
 
@@ -28,6 +29,7 @@ One structured result, the shape in `harness/schemas/worker.result.schema.json`.
 - `failed` adds `last_error`, the last ten useful lines.
 - `blocked` adds `reason`: `oracle`, `budget`, `environment` or `missing_file`.
 - `restart` adds `stack`.
+- Any status may add `noted`: one line under 160 characters, plain words, no path and no code. A second one is dropped at the fold.
 - `needs` adds `ask` in the communicate skill's shape: where we are, what is stuck, what was tried, one closed question with two or three lettered options and one recommended, what is still running, one path under `Detail`. Plain words, no path and no file name above `Detail`.
 
 ## Exit

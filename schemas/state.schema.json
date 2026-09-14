@@ -383,6 +383,13 @@
           "type": "string",
           "maxLength": 2000
         },
+        "noted": {
+          "description": "The one observation this sub-task recorded, the form from 5.5.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "pattern": "^[^/`\\n]+$"
+        },
         "ask": {
           "$ref": "urn:harness:result#/$defs/ask"
         },
