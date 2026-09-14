@@ -21,6 +21,9 @@ def answer(ws, slug, subtask_id, letter):
     st.pop("last_error", None)
     reopened = reopen(state)
     state["decisions"].append("%s · Ali chose %s: %s · ask" % (subtask_id, letter, options[letter]))
+    # Autonomy is the pillar the rest are subordinate to, so the run counts what it could not decide alone (6.2).
+    state["interventions"].append({"phase": state["phase"], "cause": "answered-ask",
+                                   "line": "%s waited on a question and Ali answered %s" % (subtask_id, letter)})
     if state["phase"] in ("finished", "delivery", "qa"):
         state["phase"] = "build"
     save_state(ws, slug, state)

@@ -76,6 +76,7 @@ def create_state(ws, slug, kind):
         "subtasks": [],
         "decisions": [],
         "frictions": [],
+        "interventions": [],
         "accepted_gaps": [],
     }
     feature_dir(ws, slug).mkdir(parents=True, exist_ok=True)

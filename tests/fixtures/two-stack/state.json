@@ -116,6 +116,13 @@
   "frictions": [
     "st-02 \u00b7 safety net selector names differ from the page markup"
   ],
+  "interventions": [
+    {
+      "phase": "safety_net",
+      "cause": "environment",
+      "line": "the frontend stack needed its dev server started by hand"
+    }
+  ],
   "accepted_gaps": [],
   "ingestion": {
     "stacks": [

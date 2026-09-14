@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+
+import json
+from harness import HarnessError, check_slug, find_workspace, main
+from harness.config import load_state, save_state
+from harness.frictions import check_cause
+
+USAGE = "usage: intervene <slug> <cause-slug> <one line>"
+
+
+def run(argv):
+    if len(argv) != 3:
+        raise HarnessError(USAGE)
+    ws, slug = find_workspace(), check_slug(argv[0])
+    state = load_state(ws, slug)
+    line = argv[2].split("\n")[0].strip()[:160]
+    if not line:
+        raise HarnessError("an intervention says in one line what had to be done by hand")
+    state["interventions"].append({"phase": state["phase"], "cause": check_cause(argv[1]), "line": line})
+    save_state(ws, slug, state)
+    print(json.dumps({"interventions": len(state["interventions"])}))
+
+
+main(run)

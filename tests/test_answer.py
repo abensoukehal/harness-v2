@@ -43,6 +43,24 @@ class Answer(unittest.TestCase):
         self.assertEqual(brief.returncode, 0, brief.stderr)
         self.assertIn("answer from Ali to your question: B. Tab separated", brief.stdout)
 
+    def test_an_answer_and_a_hand_fix_both_count_as_interventions(self):
+        run("answer", "hello", "st-01", "b", ws=self.ws)
+        touched = load_state(self.ws, "hello")["interventions"]
+        self.assertEqual(touched, [{"phase": "finished", "cause": "answered-ask",
+                                    "line": "st-01 waited on a question and Ali answered B"}],
+                         "recorded where the run actually was when the human reached it")
+        done = run("intervene", "hello", "environment", "the api stack needed its database started by hand", ws=self.ws)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn('"interventions": 2', done.stdout)
+        self.assertEqual(load_state(self.ws, "hello")["interventions"][1],
+                         {"phase": "build", "cause": "environment", "line": "the api stack needed its database started by hand"})
+        long = run("intervene", "hello", "environment", "x" * 200 + "\nand more", ws=self.ws)
+        self.assertEqual(long.returncode, 0, long.stderr)
+        self.assertEqual(load_state(self.ws, "hello")["interventions"][2]["line"], "x" * 160, "one line, and the cap")
+        for bad in [("hello", "Not A Slug", "a line"), ("hello", "environment", "   "), ("hello", "environment")]:
+            self.assertEqual(run("intervene", *bad, ws=self.ws).returncode, 1, str(bad))
+        self.assertEqual(len(load_state(self.ws, "hello")["interventions"]), 3)
+
     def test_refusals(self):
         self.assertEqual(run("answer", "hello", "st-01", "D", ws=self.ws).returncode, 1)
         self.assertIn("not an option", run("answer", "hello", "st-01", "D", ws=self.ws).stderr)

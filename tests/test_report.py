@@ -53,16 +53,33 @@ class Report(unittest.TestCase):
         for line in ["- Orders export as CSV", "- The export button shows on the orders screen: its checks stayed red after three attempts",
                      "- Done exports are struck through: waits on the export button shows on the orders screen",
                      "- Each row carries a summary: it needs an answer, below", "A. Comma separated (recommended)", "- comma, the common case.", "- a header row and nothing else.",
-                     "150 tokens (0 distinct), 300 s wall time, 4 sub-tasks, 5 attempts, 2 blocked.", "No three earlier runs to compare against.",
+                     "150 tokens (0 distinct), 300 s wall time, 4 sub-tasks, 5 attempts, 2 blocked.",
+                     "Nobody had to step in.", "No three earlier runs to compare against.",
                      "Answer the question above first.", "Open a PR from feature/hello."]:
             self.assertIn(line, text, line)
         for absent in ["repos/", "assert 3 == 2", "st-0"]:
             self.assertNotIn(absent, text.split("Detail:")[0], absent)
         self.assertEqual(text.count("Detail:"), 1)
         log = (self.ws / "product/cost-log.md").read_text()
-        self.assertIn("hello | 150 | 0 | 300 | 4 | 2", log)
+        self.assertIn("hello | 150 | 0 | 300 | 4 | 2 | 0", log)
         run("report", "hello", ws=self.ws)
         self.assertEqual((self.ws / "product/cost-log.md").read_text().count("hello |"), 1, "cost line appended once")
+
+    def test_the_report_counts_every_time_a_human_stepped_in(self):
+        state = load_state(self.ws, "hello")
+        state["interventions"] = [
+            {"phase": "safety_net", "cause": "environment", "line": "the api stack needed its database started by hand"},
+            {"phase": "build", "cause": "answered-ask", "line": "st-04 waited on a question and Ali answered A"}]
+        save_state(self.ws, "hello", state)
+        text = run("report", "hello", ws=self.ws).stdout
+        self.assertIn("Someone had to step in 2 times.", text)
+        self.assertIn("- environment, in safety net: the api stack needed its database started by hand", text)
+        self.assertIn("- answered ask, in build: st-04 waited on a question and Ali answered A", text)
+        self.assertRegex((self.ws / "product/cost-log.md").read_text(), r"hello \| \d+ \| \d+ \| 300 \| 4 \| 2 \| 2")
+        one = load_state(self.ws, "hello")
+        one["interventions"] = one["interventions"][:1]
+        save_state(self.ws, "hello", one)
+        self.assertIn("Someone had to step in once.", run("report", "hello", ws=self.ws).stdout)
 
     def test_an_observation_surfaces_under_assumptions(self):
         state = load_state(self.ws, "hello")

@@ -39,17 +39,18 @@ def relative(line, ws):
 
 
 def cost_rows(text):
-    """slug | tokens | distinct | wall | sub-tasks | blocked. A row written before distinct was counted carries five
-    fields and reads as a zero there, so an older log still compares on the numbers it does have (6.2)."""
+    """slug | tokens | distinct | wall | sub-tasks | blocked | interventions. A row written before a column was counted
+    is shorter, and reads as a zero there, so an older log still compares on the numbers it does have (6.2)."""
     rows = []
     for line in text.splitlines()[1:]:
         parts = [p.strip() for p in line.split("|")]
-        if not (len(parts) in (5, 6) and parts[1].isdigit()):
+        if not (5 <= len(parts) <= 7 and parts[1].isdigit()):
             continue
         if len(parts) == 5:
             parts = parts[:2] + ["0"] + parts[2:]
+        parts += ["0"] * (7 - len(parts))
         rows.append({"slug": parts[0], "tokens": int(parts[1]), "distinct": int(parts[2]), "wall": int(parts[3]),
-                     "subtasks": int(parts[4]), "blocked": int(parts[5])})
+                     "subtasks": int(parts[4]), "blocked": int(parts[5]), "interventions": int(parts[6])})
     return rows
 
 
@@ -99,9 +100,16 @@ def build_report(ws, slug):
     attempts = sum(s["attempts"] for s in state["subtasks"])
     wall = state.get("wall_time_s", 0)
     blocked = sum(1 for s in state["subtasks"] if s["status"] == "blocked")
+    # A run that halves its bill and still needs someone sitting beside it has not improved, so the count of times a
+    # human had to step in sits with the tokens (6.2).
+    touches = state.get("interventions", [])
     lines += ["", "What it cost.",
               "%s tokens (%s distinct), %d s wall time, %d sub-tasks, %d attempts, %d blocked."
-              % (k(tokens), k(distinct), wall, len(state["subtasks"]), attempts, blocked)]
+              % (k(tokens), k(distinct), wall, len(state["subtasks"]), attempts, blocked),
+              "Nobody had to step in." if not touches
+              else "Someone had to step in once." if len(touches) == 1
+              else "Someone had to step in %d times." % len(touches)]
+    lines += ["- %s, in %s: %s" % (i["cause"].replace("-", " "), i["phase"].replace("_", " "), i["line"]) for i in touches]
     if agents:
         lines.append("By role: " + "; ".join(summary(agents, wall)[:-1]) + ".")
     log = ws / "product" / "cost-log.md"
@@ -131,5 +139,5 @@ def build_report(ws, slug):
     (folder / "report.md").write_text(text)
     if log.exists() and slug not in {r["slug"] for r in cost_rows(log.read_text())}:
         with open(log, "a") as f:
-            f.write("%s | %d | %d | %d | %d | %d\n" % (slug, tokens, distinct, wall, len(state["subtasks"]), blocked))
+            f.write("%s | %d | %d | %d | %d | %d | %d\n" % (slug, tokens, distinct, wall, len(state["subtasks"]), blocked, len(touches)))
     return text

@@ -11,7 +11,7 @@ from .worktree import repos_of
 
 TEMPLATES = HARNESS_ROOT / "templates"
 LINKED = ["workflows", "agents", "skills"]
-COST_LOG_HEADER = "slug | tokens | distinct | wall_time_s | subtasks | blocked\n"
+COST_LOG_HEADER = "slug | tokens | distinct | wall_time_s | subtasks | blocked | interventions\n"
 
 
 def render(template, **subs):
