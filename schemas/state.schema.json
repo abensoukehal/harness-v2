@@ -198,6 +198,25 @@
           "turns": {
             "$ref": "#/$defs/count"
           },
+          "turns_by_kind": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Turns by what each one did: locate, read, write or other (6.2).",
+            "properties": {
+              "locate": {
+                "$ref": "#/$defs/count"
+              },
+              "read": {
+                "$ref": "#/$defs/count"
+              },
+              "write": {
+                "$ref": "#/$defs/count"
+              },
+              "other": {
+                "$ref": "#/$defs/count"
+              }
+            }
+          },
           "duration_s": {
             "$ref": "#/$defs/count"
           },

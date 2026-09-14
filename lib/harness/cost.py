@@ -15,6 +15,15 @@ from . import HarnessError
 from .config import load_state, save_state
 
 ROLES = {"workflow-subagent": "io"}
+TOOL_KINDS = {"Grep": "locate", "Glob": "locate", "Read": "read", "NotebookRead": "read",
+              "Write": "write", "Edit": "write", "NotebookEdit": "write"}
+# Shell heads that answer the same two questions. A head this map does not know makes the turn other, which is
+# where a shell write lands: `sed -i`, a redirect and a heredoc all read as other, and other is the denominator.
+SHELL_KINDS = {"grep": "locate", "egrep": "locate", "fgrep": "locate", "rg": "locate", "find": "locate", "ls": "locate",
+               "cat": "read", "head": "read", "tail": "read", "sed": "read"}
+ORDER = ["write", "read", "locate", "other"]
+HEAD = re.compile(r"(?:\A|[|;&\n(])\s*(?:sudo\s+|time\s+)?([A-Za-z][\w.-]*)")
+REDIRECT = re.compile(r"<<|(?<![0-9])>")  # a heredoc or a redirect wrote a file, whatever the command in front of it was
 
 
 def transcript_dirs(explicit):
@@ -28,6 +37,32 @@ def transcript_dirs(explicit):
     if not dirs:
         raise HarnessError("no workflow transcripts for session %s" % sid)
     return dirs
+
+
+def shell_kind(command):
+    """One shell turn: locate only when every command in it locates. One `cat` in the pipeline and the turn read."""
+    if REDIRECT.search(command):
+        return "write"
+    kinds = {SHELL_KINDS.get(h, "other") for h in HEAD.findall(command)} or {"other"}
+    if kinds == {"locate"}:
+        return "locate"
+    return "read" if kinds <= {"locate", "read"} else "other"
+
+
+def turn_kind(content):
+    """What one turn did: locate (a grep, glob or find, whose result is paths and line numbers), read (file content
+    into context), write, or other. A turn that locates and reads is a read turn, so the locate share counts the
+    turns an agent spends finding its ground before it reads anything (6.2)."""
+    kinds = set()
+    for b in content if isinstance(content, list) else []:
+        if isinstance(b, dict) and b.get("type") == "tool_use":
+            name = b.get("name", "")
+            kinds.add(shell_kind(str(b.get("input", {}).get("command", ""))) if name == "Bash"
+                      else TOOL_KINDS.get(name, "other"))
+    for kind in ORDER:
+        if kind in kinds:
+            return kind
+    return "other"
 
 
 def text_of(content):
@@ -47,6 +82,7 @@ def record(path, slug, ws):
     role = ROLES.get(role, role)
     first, tokens_in, tokens_out, turns, start, end = None, 0, 0, 0, None, None
     distinct = 0
+    by_kind = dict.fromkeys(ORDER, 0)
     model, effort = None, None
     for line in path.read_text(errors="replace").splitlines():
         try:
@@ -65,6 +101,7 @@ def record(path, slug, ws):
             if not turns:
                 distinct += u.get("cache_read_input_tokens", 0)
             turns += 1
+            by_kind[turn_kind(e["message"].get("content", []))] += 1
             # The pair that spent these tokens, read from the transcript: what ran, not what the config asked for (6.3).
             model = e["message"].get("model") or model
             effort = e.get("effort") or effort
@@ -76,7 +113,8 @@ def record(path, slug, ws):
         return None
     # run: which workflow launch this agent belonged to, so a second run of the same feature keeps its own span (6.2).
     out = {"role": role, "run": path.parent.name, "model": model or "unknown", "effort": effort or "inherit",
-           "tokens_in": tokens_in, "tokens_distinct": distinct, "tokens_out": tokens_out, "turns": turns,
+           "tokens_in": tokens_in, "tokens_distinct": distinct, "tokens_out": tokens_out,
+           "turns": turns, "turns_by_kind": by_kind,
            "duration_s": int(seconds(end) - seconds(start)) if start and end else 0}
     m = re.search(r"\bst-[0-9]{2,}\b", first[:400])
     if m:
@@ -118,25 +156,41 @@ def cost(ws, slug, dirs=None, out=sys.stdout):
     return agents
 
 
+def locate_turns(a):
+    return a.get("turns_by_kind", {}).get("locate", 0)
+
+
+def share(locate, turns):
+    """The locate share: the turns spent finding ground, over every turn taken. It is comparable across features of
+    different sizes and across repos, because it does not depend on what the agent went on to write (6.2)."""
+    return round(100 * locate / turns) if turns else 0
+
+
 def summary(agents, wall):
-    """Per role: the per-turn total, the distinct context beside it, and the output. Both numbers, always (6.2)."""
+    """Per role: the per-turn total, the distinct context beside it, the output, the turns and the locate share (6.2)."""
     roles = {}
     for a in agents.values():
-        r = roles.setdefault(a["role"], [0, 0, 0, 0, set()])
+        r = roles.setdefault(a["role"], [0, 0, 0, 0, set(), 0, 0])
         r[0] += a["tokens_in"]
         r[1] += a.get("tokens_distinct", 0)
         r[2] += a["tokens_out"]
         r[3] += 1
         if a.get("model"):
             r[4].add("%s/%s" % (a["model"], a.get("effort", "inherit")))
-    lines = ["%s: %d agents, %s in (%s distinct), %s out%s" % (role, n, k(i), k(d), k(o), " (%s)" % ", ".join(sorted(pairs)) if pairs else "")
-             for role, (i, d, o, n, pairs) in sorted(roles.items(), key=lambda kv: -kv[1][0])]
+        r[5] += a.get("turns", 0)
+        r[6] += locate_turns(a)
+    lines = ["%s: %d agents, %s in (%s distinct), %s out, %d turns, %d%% locate%s"
+             % (role, n, k(i), k(d), k(o), t, share(loc, t), " (%s)" % ", ".join(sorted(pairs)) if pairs else "")
+             for role, (i, d, o, n, pairs, t, loc) in sorted(roles.items(), key=lambda kv: -kv[1][0])]
     total_in = sum(a["tokens_in"] for a in agents.values())
     total_distinct = sum(a.get("tokens_distinct", 0) for a in agents.values())
     total_out = sum(a["tokens_out"] for a in agents.values())
+    total_turns = sum(a.get("turns", 0) for a in agents.values())
+    total_locate = sum(locate_turns(a) for a in agents.values())
     runs = len({a.get("run") for a in agents.values() if a.get("run")})
-    lines.append("total: %d agents over %d run%s, %s in (%s distinct), %s out, %d s wall"
-                 % (len(agents), runs, "" if runs == 1 else "s", k(total_in), k(total_distinct), k(total_out), wall))
+    lines.append("total: %d agents over %d run%s, %s in (%s distinct), %s out, %d turns, %d%% locate, %d s wall"
+                 % (len(agents), runs, "" if runs == 1 else "s", k(total_in), k(total_distinct), k(total_out),
+                    total_turns, share(total_locate, total_turns), wall))
     return lines
 
 

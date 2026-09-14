@@ -32,6 +32,7 @@ planner, test-writer, worker, reviewer, qa, retro. Skills: criteria-runner, visu
 - A workflow script decides nothing inline: its branches sit in the decisions block, and each one is called from a test with both inputs.
 - `hygiene.sh` fails a commit that puts the instruction corpus past 40,000 characters; the corpus counts the markdown and the prompt text inside the workflow scripts.
 - Cost is two numbers: the per-turn total and the distinct context beside it. Both are in `cost_by_agent`, the by-role line and `cost-log.md`.
+- Every turn is classed locate, read, write or other, and the by-role line prints the turns beside the locate share.
 - Every mechanical spawn names `agentType: 'io'`, and commands with no agent between them travel in one batch that names which command refused.
 - `harness/` in a workspace runs the pinned commit only; the retro never moves it.
 - `base_branch` and `target_branch` are one branch for every repo or a map keyed by repo; a map names every repo the stacks live in, and the worktree, the delivery diff, the push and the pre-push hook each resolve the repo they are working in.
