@@ -32,7 +32,9 @@ planner, test-writer, worker, reviewer, qa, retro. Skills: criteria-runner, visu
 - A workflow script decides nothing inline: its branches sit in the decisions block, and each one is called from a test with both inputs.
 - `hygiene.sh` fails a commit that puts the instruction corpus past 40,000 characters; the corpus counts the markdown and the prompt text inside the workflow scripts.
 - Cost is two numbers: the per-turn total and the distinct context beside it. Both are in `cost_by_agent`, the by-role line and `cost-log.md`.
-- Every turn is classed locate, read, write or other, and the by-role line prints the turns beside the locate share.
+- Every turn is classed locate, read, write or other; only the locate count is recorded, and the by-role line prints it beside the turns.
+- Every time a human touches a run it lands in `interventions` with its phase and cause, and the count reaches the report and `cost-log.md`.
+- Every number the engine records has a row in the inventory and a reader, or it is carried by name in OPEN_QUESTIONS.md; `tests/test_inventory.py` refuses the tree otherwise.
 - A worker returns one observation beside its status: one line, no path, no code, capped at one per sub-task by the fold, and it reaches the end report under assumptions.
 - The reviewer asks whether the code belongs as well as whether it cheats; that return is one line, legal only on a green sub-task, and it spends an attempt.
 - Every mechanical spawn names `agentType: 'io'`, and commands with no agent between them travel in one batch that names which command refused.

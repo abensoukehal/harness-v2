@@ -430,9 +430,12 @@ The rules from sections 20.2 and 20.3 apply to them, plus:
 
 Rules with no counter behind them are a wish. The whole reason for v2 is that a feature costs two to three five-hour windows, so the cost is a tracked number, not an impression.
 
-- Per sub-task, `state.json` records: `tokens_in`, `tokens_out`, `attempts`, `duration_s`, `lines_added`.
+- Per sub-task, `state.json` records: `tokens_in`, `tokens_out`, `attempts`, `duration_s`, `lines_added`, `tokens_discarded`.
+- **`tokens_discarded` separates work that landed from work that was thrown away.** `tokens_in` aggregates both, which is why a respawn that redid landed work cost ~890k paid twice and stayed invisible — `attempts` was still 1 by rule. A retry, a convention return (section 4.4) and a respawn all spend tokens on a diff that does not survive, and that number is the one that says whether a check was worth its price.
+- **First-pass rate**, derived not instrumented: the share of sub-tasks done with `attempts == 1` and no convention return. It is the brief-quality number — it falls when ingestion is poor — and it costs nothing to compute.
 - Per run, the end report (section 13.2) totals them and breaks them down by phase and by agent role.
-- `product/cost-log.md` keeps one line per completed feature: slug, total tokens, wall time, sub-task count, blocked count. Append-only, and the only file in the product layer that is allowed to be a log.
+- **Human interventions are counted by the engine, not by Ali.** `state.json` carries an `interventions` list: phase, cause, timestamp, one line each. Eight on run 1, two on runs 2 and 3, all tallied by hand from memory — and autonomy is the pillar tokens and quality are subordinate to. A harness that halves its bill and still needs someone sitting next to it has not improved.
+- `product/cost-log.md` keeps one line per completed feature: slug, total tokens, wall time, sub-task count, blocked count, intervention count, first-pass rate. Append-only, and the only file in the product layer that is allowed to be a log.
 - The retro compares this run against the last three. A phase whose share grew without the feature growing is a friction to name.
 - A run that exceeds `budget.tokens_per_feature` from the config does not stop. It flags the overrun in the report and the retro treats it as a defect in the harness, not in the feature.
 - **The number was invented and the first successful run settled it.** Run 3 delivered two sub-tasks for 11.77M input tokens against a configured 600k. A budget wrong by a factor of twenty flags every run, and a flag that always fires is read as noise rather than as a defect. Set it from measured runs, and re-set it whenever the io count moves.
@@ -440,6 +443,33 @@ Rules with no counter behind them are a wish. The whole reason for v2 is that a 
 
 - **The fixed part is the io bill, and it is most of the run.** Run 3 split 13.2M into 10.3M fixed and 2.9M across its two sub-tasks: 78% of a successful feature was spent before any code was written, and it will be spent identically on a feature ten times the size. Every argument for reducing the io count is in that ratio, and no plan, model or effort setting moves it.
 - **The overrun check is per run, not per sub-task.** Run 3 fired it on every sub-task, recording 24 lines against a 60-line cap as an overrun.
+### 6.2.1 The measurement inventory
+
+Every number the harness records is listed here, with where it is written and what reads it. There was no such place, so answering "what does the harness measure" meant grepping the spec: the fields sit in this section, the friction counter in 14.3, the inherited baseline in phase 3, the visual threshold in phase 5, the regression threshold in the retro. Scattered is survivable; unaccounted is not.
+
+| number | written | read by |
+|---|---|---|
+| `tokens_in`, `tokens_distinct`, `tokens_out` per agent | `bin/cost`, from the runtime's transcripts | the by-role line, `bin/report`, `cost-log.md` |
+| `tokens_in`, `tokens_out` per sub-task | `bin/cost`, summed over the agents carrying its id | `bin/report`, when no agent record exists |
+| `turns` and `locate_turns` per agent | `bin/cost`, one class per turn | the by-role line, `bin/report` |
+| `attempts` per sub-task | the build loop | `bin/report`, the three-attempt ceiling in the loop |
+| `interruptions` per sub-task | `bin/resume` | `bin/resume`, its three-relaunch ceiling |
+| `duration_s` per sub-task | `bin/state` from the loop's start, else `bin/cost` | `bin/cost` |
+| `lines_added` per sub-task | the build loop | the over-budget friction, before it is stored; nothing reads the stored copy |
+| `wall_time_s` per run | `bin/cost`, each run's own span | `bin/report`, `cost-log.md` |
+| `token_budget`, `line_budget` per sub-task | `bin/plan`, from the feature budget and the plan | `bin/briefing`, the over-budget friction |
+| `interventions`: phase, cause, one line | `bin/intervene`, `bin/answer` | `bin/report`, `cost-log.md` |
+| `divergence_pct` per accepted gap | the visual-diff skill | nothing; the report counts the gaps and never shows the divergence |
+| friction counts by cause | `bin/friction` | its own first-occurrence rule, the retro |
+| the client's inherited failing tests | `bin/baseline` | the QA agent and the test-writer agent, from `state.json` |
+| corpus size | `tests/hygiene.sh` | its own commit gate |
+| run totals against the median of the last three | `bin/report`, from `cost-log.md` | `bin/report`, the retro's regression rule |
+
+**A number that no report shows and no decision consumes is deleted.** Same rule as a guard whose condition is unreachable, and as a line of doctrine no agent reads: it passes its own test, protects nothing, and is paid on every run. Adding a measurement means adding a row here and naming its reader. A row whose reader is nothing stands only while `OPEN_QUESTIONS.md` carries it by name, and `tests/test_inventory.py` refuses the tree otherwise.
+
+The test drives that rule rather than restating it. Every numeric field in `schemas/state.schema.json` must appear in the table, every field the table names must exist in the schema, and every one of them must be loaded somewhere — a Python subscript or `.get`, a property read in a workflow, or a name in a file an agent is handed. What it proves is narrow, and the narrowness is the point: it matches on the field's name, so it catches a number nothing anywhere reads and it does not catch a number read under the wrong owner. A check that errs toward passing has to say which way it errs.
+
+- **Code quality is deliberately not measured.** No coverage number, no complexity score, no line count standing in for it. Every proxy for it is gameable by an agent that is graded on it, and a gamed quality metric is a false green with a dashboard in front of it. Quality is read off the first-pass rate, the convention returns and the regression diff — outcomes, not scores. Each measurement added here is paid on every run and read on one in ten, so the list stops where the questions stop.
 ## 7. Agents
 
 Agents are defined by **role**, not technology. The catalogue lives in `harness/claude/agents/`:
