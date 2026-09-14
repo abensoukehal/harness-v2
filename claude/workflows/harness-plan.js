@@ -100,25 +100,25 @@ const noSpec = specRefusal(FEATURE, `${T('new')} ${slug}`, scout)
 if (noSpec) throw new Error(noSpec)
 if (scout.plan_exists) log(`plan.md exists for ${slug}: planning reruns and rewrites it`)
 
-const discovery = await spawn(
+const legacyDiscovery = await spawn(
   `Workspace root: ${WS}. Feature ${slug}. Every path below is absolute; use these, resolve none yourself. ` +
   `Run the Legacy Discovery part of your Method on ${FEATURE}/spec.md and ${FEATURE}/design (${scout.design_files.length} files). ` +
   `Write ${WS}/product/code-map/ and ${WS}/product/conventions.md. Return the stacks, the zones and a summary under 300 characters.`,
   { agentType: 'planner', label: 'legacy_discovery', schema: LEGACY_DISCOVERY, ...A('planner') })
-if (!discovery) throw new Error(RUNTIME)
-log(`mapped ${discovery.zones.length} zones across ${discovery.stacks.join(', ')}`)
+if (!legacyDiscovery) throw new Error(RUNTIME)
+log(`mapped ${legacyDiscovery.zones.length} zones across ${legacyDiscovery.stacks.join(', ')}`)
 
 phase('Planning')
 const planning = await spawn(
   `Workspace root: ${WS}. Feature ${slug}. Every path below is absolute; use these, resolve none yourself. ` +
-  `Legacy Discovery found stacks ${discovery.stacks.join(', ')} and zones ${discovery.zones.join(', ')}. ${discovery.summary}\n` +
+  `Legacy Discovery found stacks ${legacyDiscovery.stacks.join(', ')} and zones ${legacyDiscovery.zones.join(', ')}. ${legacyDiscovery.summary}\n` +
   `Run the Planning part of your Method. Write ${FEATURE}/plan.md in the exact layout, ${FEATURE}/spec-gaps.md and ${FEATURE}/journey.md. ` +
   'Return kind and the counts. The plan-ready message is rendered from the plan by a tool (13.3); write none.',
   { agentType: 'planner', label: 'plan', schema: PLANNING, ...A('planner') })
 if (!planning) throw new Error(RUNTIME)
 
 const init = scout.state_exists ? '' : `${T('state')} init ${slug} ${planning.kind}\n`
-const patch = JSON.stringify({ kind: planning.kind, phase: 'planning', legacy_discovery: { stacks: discovery.stacks, zones: discovery.zones, summary: discovery.summary } })
+const patch = JSON.stringify({ kind: planning.kind, phase: 'planning', legacy_discovery: { stacks: legacyDiscovery.stacks, zones: legacyDiscovery.zones, summary: legacyDiscovery.summary } })
 const recorded = await spawn(
   `${IO}Run:\n${init}${T('state')} update ${slug} - <<'EOF'\n${patch}\nEOF\nReturn ok true when every command exits 0, else ok false with the stderr as error.`,
   { label: 'record state', schema: RESULT, agentType: 'io', ...A('io') })

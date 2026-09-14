@@ -480,7 +480,6 @@ The test drives that rule rather than restating it. Every numeric field in `sche
 | Role | Model | Effort | Why |
 |---|---|---|---|
 | planner | high | high | a bad decomposition is paid all day in wasted attempts |
-| legacy_discovery | mid | mid | reads legacy to extract conventions; a miss propagates into every briefing |
 | test-writer | mid | high | a weak test survives its mutation check and protects nothing |
 | worker | mid | mid | the largest spend and the safest experiment: a bad output costs one attempt |
 | reviewer | high | high | the only thing stopping a worker from working around a test, and the only check that the conventions were followed |
