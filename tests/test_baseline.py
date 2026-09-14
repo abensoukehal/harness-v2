@@ -53,6 +53,20 @@ class Baseline(unittest.TestCase):
             self.assertEqual(state["frictions"], [])
             self.assertTrue((ws / ".worktrees/hello/svc").exists(), "the suite ran in the feature worktree")
 
+    def test_a_rerun_replaces_the_last_baseline_rather_than_adding_to_it(self):
+        # The logger appends. A second run over a kept log reads every failure twice, and the baseline QA compares
+        # against stops matching the suite it came from.
+        with tempfile.TemporaryDirectory() as d:
+            ws = env_workspace(Path(d), config=env_config(extra="client_tests: {api: \"%s\"}" % RED))
+            self.addCleanup(stop_all, ws, "hello")
+            for _ in range(2):
+                done = run("baseline", "hello", ws=ws)
+                self.assertEqual(done.returncode, 0, done.stderr)
+            log = (ws / ".run/hello/baseline-api.log").read_text()
+            self.assertEqual(log.count("not ok 3 - lists items sorted by title"), 1, "the log holds this run only")
+            self.assertEqual(load_state(ws, "hello")["client_test_baseline"]["api"],
+                             ["tests/test_items.py::test_sorted", "lists items sorted by title"])
+
     def test_only_declared_secrets_are_redacted_from_the_suite_output(self):
         # An env file holds config as well as secrets. Redacting all of it eats version numbers and paths, and the
         # suite's own failure becomes unreadable at the moment someone has to act on it (9.3).

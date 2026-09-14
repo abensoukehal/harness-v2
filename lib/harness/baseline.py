@@ -70,6 +70,7 @@ def baseline(ws, slug, out=sys.stdout):
         # environment redacts ordinary config — a version number, a path segment — and shreds the suite's output.
         keys = [k for k in cfg["stacks"][name].get("secrets", []) if k in per_stack[name]]
         logfile = rd / ("baseline-%s.log" % name)
+        logfile.write_text("")  # the logger appends: a rerun that keeps the last run's output counts its failures twice
         proc = spawn(command, stack_dir(ws, cfg, slug, name), stack_env, logfile, keys)
         try:
             code = proc.wait(timeout=TIMEOUT_S)
