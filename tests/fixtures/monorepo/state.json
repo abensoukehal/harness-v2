@@ -36,8 +36,7 @@
       "cost": {
         "tokens_in": 51200,
         "tokens_out": 3900,
-        "duration_s": 300,
-        "lines_added": 64
+        "duration_s": 300
       }
     },
     {

@@ -7,7 +7,7 @@ from harness.config import load_config, load_state, save_state
 from harness import worktree
 from test_next import st
 
-DONE = dict(status="done", attempts=1, commit=None, cost={"tokens_in": 1, "tokens_out": 1, "duration_s": 1, "lines_added": 3})
+DONE = dict(status="done", attempts=1, commit=None, cost={"tokens_in": 1, "tokens_out": 1, "duration_s": 1})
 
 
 class Deliver(unittest.TestCase):

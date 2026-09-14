@@ -23,6 +23,16 @@ REASONS = {
 }
 
 
+def first_pass(subtasks):
+    """The share of the sub-tasks that were attempted which landed on the first one (6.2).
+
+    A convention return spends an attempt, so `attempts == 1` already says no reviewer sent the diff back. A sub-task
+    skipped on a dependency was never attempted and is not in the denominator: it measures the brief, not the plan.
+    """
+    tried = [s for s in subtasks if s["attempts"]]
+    return round(100 * sum(1 for s in tried if s["status"] == "done" and s["attempts"] == 1) / len(tried)) if tried else 0
+
+
 def status_of(state):
     """Zero done is nothing landed, whatever the reason; skipped counts against success exactly like blocked (10)."""
     if not any(s["status"] == "done" for s in state["subtasks"]):
@@ -33,24 +43,31 @@ def status_of(state):
     return "done with gaps" if gaps else "done"
 
 
+def trim(pct):
+    """A percentage on a phone: 3 rather than 3.0, 3.2 rather than 3.20000000001."""
+    return ("%.1f" % pct).rstrip("0").rstrip(".")
+
+
 def relative(line, ws):
     """A path into this workspace is written from its root: an absolute one means nothing on a phone (13.2)."""
     return line.replace(str(ws) + "/", "").replace(str(ws), ".")
 
 
 def cost_rows(text):
-    """slug | tokens | distinct | wall | sub-tasks | blocked | interventions. A row written before a column was counted
-    is shorter, and reads as a zero there, so an older log still compares on the numbers it does have (6.2)."""
+    """slug | tokens | distinct | wall | sub-tasks | blocked | interventions | discarded | first pass. A row written
+    before a column was counted is shorter, and reads as a zero there, so an older log still compares on the numbers
+    it does have (6.2)."""
     rows = []
     for line in text.splitlines()[1:]:
         parts = [p.strip() for p in line.split("|")]
-        if not (5 <= len(parts) <= 7 and parts[1].isdigit()):
+        if not (5 <= len(parts) <= 9 and parts[1].isdigit()):
             continue
         if len(parts) == 5:
             parts = parts[:2] + ["0"] + parts[2:]
-        parts += ["0"] * (7 - len(parts))
+        parts += ["0"] * (9 - len(parts))
         rows.append({"slug": parts[0], "tokens": int(parts[1]), "distinct": int(parts[2]), "wall": int(parts[3]),
-                     "subtasks": int(parts[4]), "blocked": int(parts[5]), "interventions": int(parts[6])})
+                     "subtasks": int(parts[4]), "blocked": int(parts[5]), "interventions": int(parts[6]),
+                     "discarded": int(parts[7]), "first_pass": int(parts[8])})
     return rows
 
 
@@ -75,6 +92,10 @@ def build_report(ws, slug):
         lines.append("- %s: %s" % (s.get("goal", s["id"]), text))
     if not missed:
         lines.append("Nothing." if done else "Nothing was planned.")
+    # The number that decided the outcome, beside the region it decided: a gap accepted without it cannot be judged
+    # afterwards, and QA holds the comparison only while it runs (6.2.1).
+    lines += ["- %s is %s%% away from the design, and that was accepted." % (g["region"], trim(g["divergence_pct"]))
+              for g in state["accepted_gaps"]]
     for s in asks:
         # The report points at the feature folder once, at the end; the parked ask keeps its question and options only.
         body = [relative(l, ws) for l in render(s["ask"]).rstrip().splitlines() if not l.startswith(("Still running:", "Detail:"))]
@@ -103,9 +124,15 @@ def build_report(ws, slug):
     # A run that halves its bill and still needs someone sitting beside it has not improved, so the count of times a
     # human had to step in sits with the tokens (6.2).
     touches = state.get("interventions", [])
+    # What a retry, a convention return or a respawn spent on a diff that did not survive. tokens_in aggregates the
+    # two and a check that creates attempts cannot be judged against a number that hides what it costs (6.2).
+    thrown = sum(s.get("cost", {}).get("tokens_discarded", 0) for s in state["subtasks"])
+    rate = first_pass(state["subtasks"])
     lines += ["", "What it cost.",
               "%s tokens (%s distinct), %d s wall time, %d sub-tasks, %d attempts, %d blocked."
               % (k(tokens), k(distinct), wall, len(state["subtasks"]), attempts, blocked),
+              "%s of those tokens went on attempts that were thrown away, and %d%% of the work landed first time."
+              % (k(thrown), rate),
               "Nobody had to step in." if not touches
               else "Someone had to step in once." if len(touches) == 1
               else "Someone had to step in %d times." % len(touches)]
@@ -139,5 +166,6 @@ def build_report(ws, slug):
     (folder / "report.md").write_text(text)
     if log.exists() and slug not in {r["slug"] for r in cost_rows(log.read_text())}:
         with open(log, "a") as f:
-            f.write("%s | %d | %d | %d | %d | %d | %d\n" % (slug, tokens, distinct, wall, len(state["subtasks"]), blocked, len(touches)))
+            f.write("%s | %d | %d | %d | %d | %d | %d | %d | %d\n"
+                    % (slug, tokens, distinct, wall, len(state["subtasks"]), blocked, len(touches), thrown, rate))
     return text

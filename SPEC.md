@@ -430,12 +430,12 @@ The rules from sections 20.2 and 20.3 apply to them, plus:
 
 Rules with no counter behind them are a wish. The whole reason for v2 is that a feature costs two to three five-hour windows, so the cost is a tracked number, not an impression.
 
-- Per sub-task, `state.json` records: `tokens_in`, `tokens_out`, `attempts`, `duration_s`, `lines_added`, `tokens_discarded`.
+- Per sub-task, `state.json` records: `tokens_in`, `tokens_out`, `tokens_discarded`, `attempts`, `duration_s`.
 - **`tokens_discarded` separates work that landed from work that was thrown away.** `tokens_in` aggregates both, which is why a respawn that redid landed work cost ~890k paid twice and stayed invisible — `attempts` was still 1 by rule. A retry, a convention return (section 4.4) and a respawn all spend tokens on a diff that does not survive, and that number is the one that says whether a check was worth its price.
-- **First-pass rate**, derived not instrumented: the share of sub-tasks done with `attempts == 1` and no convention return. It is the brief-quality number — it falls when ingestion is poor — and it costs nothing to compute.
+- **First-pass rate**, derived not instrumented: the share of sub-tasks done with `attempts == 1`. A convention return spends an attempt, so the count already carries it. The denominator is the sub-tasks that were attempted, because one skipped on a dependency was never briefed and counting it measures the plan instead. It is the brief-quality number — it falls when ingestion is poor — and it costs nothing to compute.
 - Per run, the end report (section 13.2) totals them and breaks them down by phase and by agent role.
 - **Human interventions are counted by the engine, not by Ali.** `state.json` carries an `interventions` list: phase, cause, timestamp, one line each. Eight on run 1, two on runs 2 and 3, all tallied by hand from memory — and autonomy is the pillar tokens and quality are subordinate to. A harness that halves its bill and still needs someone sitting next to it has not improved.
-- `product/cost-log.md` keeps one line per completed feature: slug, total tokens, wall time, sub-task count, blocked count, intervention count, first-pass rate. Append-only, and the only file in the product layer that is allowed to be a log.
+- `product/cost-log.md` keeps one line per completed feature: slug, total tokens, distinct context, wall time, sub-task count, blocked count, intervention count, discarded tokens, first-pass rate. Append-only, and the only file in the product layer that is allowed to be a log.
 - The retro compares this run against the last three. A phase whose share grew without the feature growing is a friction to name.
 - A run that exceeds `budget.tokens_per_feature` from the config does not stop. It flags the overrun in the report and the retro treats it as a defect in the harness, not in the feature.
 - **The number was invented and the first successful run settled it.** Run 3 delivered two sub-tasks for 11.77M input tokens against a configured 600k. A budget wrong by a factor of twenty flags every run, and a flag that always fires is read as noise rather than as a defect. Set it from measured runs, and re-set it whenever the io count moves.
@@ -451,15 +451,16 @@ Every number the harness records is listed here, with where it is written and wh
 |---|---|---|
 | `tokens_in`, `tokens_distinct`, `tokens_out` per agent | `bin/cost`, from the runtime's transcripts | the by-role line, `bin/report`, `cost-log.md` |
 | `tokens_in`, `tokens_out` per sub-task | `bin/cost`, summed over the agents carrying its id | `bin/report`, when no agent record exists |
+| `tokens_discarded` per sub-task | `bin/cost`, every attempt but the last | `bin/report`, `cost-log.md` |
+| first-pass rate, from `attempts` | `bin/report`, derived | `bin/report`, `cost-log.md` |
 | `turns` and `locate_turns` per agent | `bin/cost`, one class per turn | the by-role line, `bin/report` |
 | `attempts` per sub-task | the build loop | `bin/report`, the three-attempt ceiling in the loop |
 | `interruptions` per sub-task | `bin/resume` | `bin/resume`, its three-relaunch ceiling |
 | `duration_s` per sub-task | `bin/state` from the loop's start, else `bin/cost` | `bin/cost` |
-| `lines_added` per sub-task | the build loop | the over-budget friction, before it is stored; nothing reads the stored copy |
 | `wall_time_s` per run | `bin/cost`, each run's own span | `bin/report`, `cost-log.md` |
 | `token_budget`, `line_budget` per sub-task | `bin/plan`, from the feature budget and the plan | `bin/briefing`, the over-budget friction |
 | `interventions`: phase, cause, one line | `bin/intervene`, `bin/answer` | `bin/report`, `cost-log.md` |
-| `divergence_pct` per accepted gap | the visual-diff skill | nothing; the report counts the gaps and never shows the divergence |
+| `divergence_pct` per accepted gap | the visual-diff skill | `bin/report`, beside the region it decided |
 | friction counts by cause | `bin/friction` | its own first-occurrence rule, the retro |
 | the client's inherited failing tests | `bin/baseline` | the QA agent and the test-writer agent, from `state.json` |
 | corpus size | `tests/hygiene.sh` | its own commit gate |
@@ -467,9 +468,39 @@ Every number the harness records is listed here, with where it is written and wh
 
 **A number that no report shows and no decision consumes is deleted.** Same rule as a guard whose condition is unreachable, and as a line of doctrine no agent reads: it passes its own test, protects nothing, and is paid on every run. Adding a measurement means adding a row here and naming its reader. A row whose reader is nothing stands only while `OPEN_QUESTIONS.md` carries it by name, and `tests/test_inventory.py` refuses the tree otherwise.
 
-The test drives that rule rather than restating it. Every numeric field in `schemas/state.schema.json` must appear in the table, every field the table names must exist in the schema, and every one of them must be loaded somewhere — a Python subscript or `.get`, a property read in a workflow, or a name in a file an agent is handed. What it proves is narrow, and the narrowness is the point: it matches on the field's name, so it catches a number nothing anywhere reads and it does not catch a number read under the wrong owner. A check that errs toward passing has to say which way it errs.
+The test drives that rule rather than restating it. Every numeric field in `schemas/state.schema.json` must appear in the table, every field the table names must exist in the schema, and every one of them must be loaded somewhere under `lib/` or `bin/`. What it proves is narrow, and the narrowness is the point: it matches on the field's name, so it catches a number nothing anywhere reads and it does not catch a number read under the wrong owner. A check that errs toward passing has to say which way it errs.
+
+**A row the code does not have is not deleted.** The table is written from the spec and the schema is written from the code, so a row with no field behind it is a measurement that was specified and never built. The test refuses the tree either way, and which way it is answered decides whether the number gets built or quietly disappears: `tokens_discarded` and the first-pass rate sat in this table against a schema that had neither.
 
 - **Code quality is deliberately not measured.** No coverage number, no complexity score, no line count standing in for it. Every proxy for it is gameable by an agent that is graded on it, and a gamed quality metric is a false green with a dashboard in front of it. Quality is read off the first-pass rate, the convention returns and the regression diff — outcomes, not scores. Each measurement added here is paid on every run and read on one in ten, so the list stops where the questions stop.
+### 6.3 Model and effort per role
+
+`model` and `effort` are set per agent role in `client.config.yaml`. Static, per workspace. No dynamic selection, no heuristic that guesses from the sub-task: a run whose cost depends on a choice made at runtime cannot be compared to the run before it, which destroys the only measurement that would justify the choice.
+
+| Role | Model | Effort | Why |
+|---|---|---|---|
+| planner | high | high | a bad decomposition is paid all day in wasted attempts |
+| ingestion | mid | mid | reads legacy to extract conventions; a miss propagates into every briefing |
+| test-writer | mid | high | a weak test survives its mutation check and protects nothing |
+| worker | mid | mid | the largest spend and the safest experiment: a bad output costs one attempt |
+| reviewer | high | high | the only thing stopping a worker from working around a test, and the only check that the conventions were followed |
+| qa | mid | mid | runs `journey.md`, a script written at plan time |
+| retro | high | high | it writes the engine every workspace eventually adopts |
+
+Everything else on the pipeline is a tool and takes no model: plan parsing, mutation checks, the freeze, `bin/next`, criteria running, visual diff, delivery, the report, notifications, hygiene. That is eleven of the twenty steps, and per section 6.2 it is also where the tokens went.
+
+**Effort does not touch the io cost, and never will.** Run 3 set io to `low` and its input was unchanged: 3.24M across 28 agents, ~116k each, against the test-writer's 1.13M. Effort governs what a model produces, and the io spend is what it is handed to read. No model or effort setting reaches it. The only two numbers that do are how many io agents run and how much each is given — and the second turned out to be worth almost nothing. Measured across run 3, context above the shared floor totalled 47,674 characters over 28 agents, 3.0%: a spawn costs a fixed ~55k of runtime prefix and attachments whatever it is asked to do, and the prompts themselves are 0.19% of the bill. Trimming what an io agent reads is not a lever. **The count is the only lever the harness owns.**
+
+Not one of the 28 needed a model. Every one runs a command and copies back stdout, an exit code or a JSON document; none resolves an ambiguity, none chooses. They exist as agents for a structural reason rather than a stylistic one: a workflow script has no process and no filesystem, so the only thing in the runtime that can reach a shell is an agent. That is the runtime's sandbox, not a rule of ours: `process`, `require`, `fetch` and `import()` are undefined in a workflow realm and code generation is disabled, verified with zero agents. `test_pure_orchestration` records the limit; deleting it would buy back nothing. What it still earns is catching `Date.now` and `Math.random` at test time instead of mid-run, where they break resume.
+
+**So the lever that remains is what a spawn is, not what it is handed — and the harness already owned it.** A spawn with `tools: Bash` and no skills, no MCP and no deferred tools measured 9,028 tokens against 55,723 for a default subagent running the same commands. The io steps were going through the default agent type with a catalogue of tools none of them could touch. Naming an agent type is a line in the workflow, and it is worth ~43k distinct per spawn, three times what batching saves per spawn removed. Batching and the agent type compose: 28 default spawns to 15 minimal ones is roughly a tenfold cut on the io bill.
+
+**Measured, run 4 against run 3, same feature, engine untouched.** io went from 42 spawns and 5.92M counted to 21 and 707k — an eightfold cut — and the run from 18.6M to 7.7M counted, wall time from 3,819 s to 2,000 s. The floor under a minimal spawn is ~6.7k distinct before a command runs, ~9.8k for a real `bin/state` write with a JSON heredoc: that is the price of existing as an agent, and 21 spawns pay 250k of it. io is now 25% of distinct context, with the worker, planner, reviewer, QA and retro each between 10% and 16%. No role dominates any more; the next lever is not a role. Counted context is 7.8× distinct across the run, and that multiplier is turns — a long conversation over a small context is now the shape of the bill.
+
+**Recalibrate the budget from this run,** not run 3: its fixed part fell with the io count and the run-3 numbers would never flag again.
+
+Defaults are the values above. Lowering one is an experiment on one workspace, over at least three features, judged on tokens **and blocked rate together**: a cheaper worker that blocks one more sub-task per run cost money rather than saving it.
+
 ## 7. Agents
 
 Agents are defined by **role**, not technology. The catalogue lives in `harness/claude/agents/`:
@@ -875,34 +906,6 @@ Two files the harness maintains so a conversation about the harness can start wi
 - **The mechanical steps are the expensive ones.** In run 2 the io agents spent 3.26M of the build's 5.67M input tokens, roughly 105k each, against 1.07M for the test-writer. Steps that parse, render, freeze or decide by rule do not need a model at all, and where they still run through one they are the first place to cut effort. Measure per role before choosing a model per role: the intuition that the thinking agents cost the most is wrong here by a factor of three.
 - **Measure input tokens, not just output.** The dry run spent 1.74M input tokens against 27k output on a single agent. A cost log built from output deltas measures the cheap half and reports a run that burned a window as nearly free, which makes pillar four unenforceable.
 - **Record distinct context beside the per-turn total, because the two rank the roles differently.** Summing input per turn counts an agent's context once per turn it takes, so a long conversation over a small context outweighs a short one over a large context. Run 3: qa took 53 turns and counted 1.77M against 153k of context it actually held; each io agent takes 2 and counts about twice its own. Under the per-turn total io is 36% of the run, under distinct context 75% — the same run, two rankings, and the second is the one that says where to work. Neither number is wrong: the per-turn total is what gets billed, distinct context is what the design controls. A cost log that carries only one of them will send the next pass to the wrong role.
-### 6.3 Model and effort per role
-
-`model` and `effort` are set per agent role in `client.config.yaml`. Static, per workspace. No dynamic selection, no heuristic that guesses from the sub-task: a run whose cost depends on a choice made at runtime cannot be compared to the run before it, which destroys the only measurement that would justify the choice.
-
-| Role | Model | Effort | Why |
-|---|---|---|---|
-| planner | high | high | a bad decomposition is paid all day in wasted attempts |
-| ingestion | mid | mid | reads legacy to extract conventions; a miss propagates into every briefing |
-| test-writer | mid | high | a weak test survives its mutation check and protects nothing |
-| worker | mid | mid | the largest spend and the safest experiment: a bad output costs one attempt |
-| reviewer | high | high | the only thing stopping a worker from working around a test, and the only check that the conventions were followed |
-| qa | mid | mid | runs `journey.md`, a script written at plan time |
-| retro | high | high | it writes the engine every workspace eventually adopts |
-
-Everything else on the pipeline is a tool and takes no model: plan parsing, mutation checks, the freeze, `bin/next`, criteria running, visual diff, delivery, the report, notifications, hygiene. That is eleven of the twenty steps, and per section 6.2 it is also where the tokens went.
-
-**Effort does not touch the io cost, and never will.** Run 3 set io to `low` and its input was unchanged: 3.24M across 28 agents, ~116k each, against the test-writer's 1.13M. Effort governs what a model produces, and the io spend is what it is handed to read. No model or effort setting reaches it. The only two numbers that do are how many io agents run and how much each is given — and the second turned out to be worth almost nothing. Measured across run 3, context above the shared floor totalled 47,674 characters over 28 agents, 3.0%: a spawn costs a fixed ~55k of runtime prefix and attachments whatever it is asked to do, and the prompts themselves are 0.19% of the bill. Trimming what an io agent reads is not a lever. **The count is the only lever the harness owns.**
-
-Not one of the 28 needed a model. Every one runs a command and copies back stdout, an exit code or a JSON document; none resolves an ambiguity, none chooses. They exist as agents for a structural reason rather than a stylistic one: a workflow script has no process and no filesystem, so the only thing in the runtime that can reach a shell is an agent. That is the runtime's sandbox, not a rule of ours: `process`, `require`, `fetch` and `import()` are undefined in a workflow realm and code generation is disabled, verified with zero agents. `test_pure_orchestration` records the limit; deleting it would buy back nothing. What it still earns is catching `Date.now` and `Math.random` at test time instead of mid-run, where they break resume.
-
-**So the lever that remains is what a spawn is, not what it is handed — and the harness already owned it.** A spawn with `tools: Bash` and no skills, no MCP and no deferred tools measured 9,028 tokens against 55,723 for a default subagent running the same commands. The io steps were going through the default agent type with a catalogue of tools none of them could touch. Naming an agent type is a line in the workflow, and it is worth ~43k distinct per spawn, three times what batching saves per spawn removed. Batching and the agent type compose: 28 default spawns to 15 minimal ones is roughly a tenfold cut on the io bill.
-
-**Measured, run 4 against run 3, same feature, engine untouched.** io went from 42 spawns and 5.92M counted to 21 and 707k — an eightfold cut — and the run from 18.6M to 7.7M counted, wall time from 3,819 s to 2,000 s. The floor under a minimal spawn is ~6.7k distinct before a command runs, ~9.8k for a real `bin/state` write with a JSON heredoc: that is the price of existing as an agent, and 21 spawns pay 250k of it. io is now 25% of distinct context, with the worker, planner, reviewer, QA and retro each between 10% and 16%. No role dominates any more; the next lever is not a role. Counted context is 7.8× distinct across the run, and that multiplier is turns — a long conversation over a small context is now the shape of the bill.
-
-**Recalibrate the budget from this run,** not run 3: its fixed part fell with the io count and the run-3 numbers would never flag again.
-
-Defaults are the values above. Lowering one is an experiment on one workspace, over at least three features, judged on tokens **and blocked rate together**: a cheaper worker that blocks one more sub-task per run cost money rather than saving it.
-
 - Criteria runner model. v1: session model; try a smaller one in a later feature.
 - Visual region mapping: hand-made regions file vs derived from Figma node tree. v1: hand-made, exported with the design.
 - Harness in workspace: submodule vs plain clone pinned to a commit. v1: plain clone plus a pinned sha in `state.json`; simpler on the VPS.

@@ -187,7 +187,7 @@ rejects("state", "two-stack/state.json", [
   ["status unknown", (s) => (s.subtasks[0].status = "finished"), /^\/subtasks\/0\/status$/],
   ["done without commit", (s) => delete s.subtasks[0].commit, /^\/subtasks\/0\/commit$/],
   ["done without cost", (s) => delete s.subtasks[0].cost, /^\/subtasks\/0\/cost$/],
-  ["cost without lines_added", (s) => delete s.subtasks[0].cost.lines_added, /^\/subtasks\/0\/cost\/lines_added$/],
+  ["cost without duration_s", (s) => delete s.subtasks[0].cost.duration_s, /^\/subtasks\/0\/cost\/duration_s$/],
   ["negative duration", (s) => (s.subtasks[0].cost.duration_s = -1), /^\/subtasks\/0\/cost\/duration_s$/],
   ["cost flattened onto the sub-task", (s) => (s.subtasks[0].tokens_in = 1), /^\/subtasks\/0\/tokens_in$/],
   ["missing interruptions", (s) => delete s.subtasks[0].interruptions, /^\/subtasks\/0\/interruptions$/],

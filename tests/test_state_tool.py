@@ -94,7 +94,7 @@ class StateTool(unittest.TestCase):
         self.update({"subtasks": [{"id": "st-01", "stack": "backend", "status": "pending", "attempts": 0, "interruptions": 0,
                                    "worktree": ".worktrees/hello/backend", "exit_criteria": [{"kind": "lint"}]}]})
         done = self.update({"subtasks": [{"id": "st-01", "status": "done", "attempts": 1, "commit": "a" * 40,
-                                          "cost": {"tokens_in": 0, "tokens_out": 5, "lines_added": 1, "duration_s": 0}, "_since": 1}]})
+                                          "cost": {"tokens_in": 0, "tokens_out": 5, "duration_s": 0}, "_since": 1}]})
         self.assertEqual(done.returncode, 0, done.stderr)
         st = load_state(self.ws, "hello")["subtasks"][0]
         self.assertNotIn("_since", st)

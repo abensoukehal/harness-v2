@@ -15,7 +15,7 @@ class Answer(unittest.TestCase):
         state = load_state(self.ws, "hello")
         state.update(phase="finished", delivered=True, subtasks=[
             st("st-01", "api", "svc", status="blocked", attempts=1, reason="needs", ask=ASK, goal="Export as a file"),
-            st("st-02", "web", "web", status="done", attempts=1, commit="a" * 40, cost={"tokens_in": 1, "tokens_out": 1, "duration_s": 1, "lines_added": 1}),
+            st("st-02", "web", "web", status="done", attempts=1, commit="a" * 40, cost={"tokens_in": 1, "tokens_out": 1, "duration_s": 1}),
             st("st-03", "api", "svc", status="skipped", reason="depends on st-01", depends_on=["st-01"]),
             st("st-04", "web", "web", status="skipped", reason="depends on st-03", depends_on=["st-03"]),
             st("st-05", "web", "web", status="blocked", attempts=3, reason="criteria", last_error="red"),

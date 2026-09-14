@@ -35,6 +35,7 @@ planner, test-writer, worker, reviewer, qa, retro. Skills: criteria-runner, visu
 - Every turn is classed locate, read, write or other; only the locate count is recorded, and the by-role line prints it beside the turns.
 - Every time a human touches a run it lands in `interventions` with its phase and cause, and the count reaches the report and `cost-log.md`.
 - Every number the engine records has a row in the inventory and a reader, or it is carried by name in OPEN_QUESTIONS.md; `tests/test_inventory.py` refuses the tree otherwise.
+- A sub-task's cost separates what landed from what was thrown away, and the report carries the discarded tokens beside the share of the work that landed on its first attempt.
 - A worker returns one observation beside its status: one line, no path, no code, capped at one per sub-task by the fold, and it reaches the end report under assumptions.
 - The reviewer asks whether the code belongs as well as whether it cheats; that return is one line, legal only on a green sub-task, and it spends an attempt.
 - Every mechanical spawn names `agentType: 'io'`, and commands with no agent between them travel in one batch that names which command refused.

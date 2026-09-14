@@ -329,7 +329,7 @@ try {
     const tag = (lines) => (lines || []).map((l) => (l.startsWith(id) ? l : `${id} · ${l}`))
     const { lines_added, ...rest } = outcome
     const item = { id, ...rest, ...notedOf(worker), attempts: attemptsOf(worker, outcome, byId()[id].attempts, spent) }
-    if (outcome.status === 'done') Object.assign(item, { cost: { tokens_in: 0, tokens_out: 0, duration_s: 0, lines_added: outcome.lines_added }, _since: started })
+    if (outcome.status === 'done') Object.assign(item, { cost: { tokens_in: 0, tokens_out: 0, duration_s: 0 }, _since: started })
     await runAll(`${id} result`, [setState('result', {
       subtasks: [item],
       decisions: [...tag(worker && worker.decisions), ...tag(review && review.decisions)],

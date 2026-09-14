@@ -10,7 +10,7 @@ from helpers import BIN, env_workspace, run
 from harness.config import load_state, save_state
 from test_next import ASK, st
 
-COST = {"tokens_in": 100, "tokens_out": 50, "duration_s": 30, "lines_added": 12}
+COST = {"tokens_in": 100, "tokens_out": 50, "duration_s": 30, "tokens_discarded": 20}
 
 
 class Inbox(BaseHTTPRequestHandler):
@@ -64,6 +64,29 @@ class Report(unittest.TestCase):
         self.assertIn("hello | 150 | 0 | 300 | 4 | 2 | 0", log)
         run("report", "hello", ws=self.ws)
         self.assertEqual((self.ws / "product/cost-log.md").read_text().count("hello |"), 1, "cost line appended once")
+
+    def test_what_was_thrown_away_and_what_landed_first_time(self):
+        text = run("report", "hello", ws=self.ws).stdout
+        # st-01 done in one, st-02 blocked after three, st-04 blocked after one; st-03 was never attempted.
+        self.assertIn("20 of those tokens went on attempts that were thrown away, and 33% of the work landed first time.", text)
+        self.assertRegex((self.ws / "product/cost-log.md").read_text(), r"hello \| 150 \| 0 \| 300 \| 4 \| 2 \| 0 \| 20 \| 33")
+        state = load_state(self.ws, "hello")
+        for s in state["subtasks"]:
+            s.update(status="done", attempts=1, commit="a" * 40, cost=dict(COST, tokens_discarded=0))
+            s.pop("reason", None)
+            s.pop("ask", None)
+        save_state(self.ws, "hello", state)
+        self.assertIn("0 of those tokens went on attempts that were thrown away, and 100% of the work landed first time.",
+                      run("report", "hello", ws=self.ws).stdout)
+
+    def test_an_accepted_gap_carries_the_divergence_that_decided_it(self):
+        state = load_state(self.ws, "hello")
+        state["accepted_gaps"] = [{"subtask": "st-01", "region": "the totals row", "divergence_pct": 3.25},
+                                  {"subtask": "st-01", "region": "the export button", "divergence_pct": 8.0}]
+        save_state(self.ws, "hello", state)
+        text = run("report", "hello", ws=self.ws).stdout
+        self.assertIn("- the totals row is 3.2% away from the design, and that was accepted.", text)
+        self.assertIn("- the export button is 8% away from the design, and that was accepted.", text)
 
     def test_the_report_counts_every_time_a_human_stepped_in(self):
         state = load_state(self.ws, "hello")

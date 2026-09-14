@@ -370,8 +370,7 @@
           "required": [
             "tokens_in",
             "tokens_out",
-            "duration_s",
-            "lines_added"
+            "duration_s"
           ],
           "properties": {
             "tokens_in": {
@@ -380,10 +379,11 @@
             "tokens_out": {
               "$ref": "#/$defs/count"
             },
-            "duration_s": {
-              "$ref": "#/$defs/count"
+            "tokens_discarded": {
+              "$ref": "#/$defs/count",
+              "description": "Spent on an attempt that was superseded, and paid for a diff that did not survive (6.2)."
             },
-            "lines_added": {
+            "duration_s": {
               "$ref": "#/$defs/count"
             }
           }

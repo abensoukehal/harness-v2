@@ -26,7 +26,7 @@ class Cost(unittest.TestCase):
             ws = env_workspace(Path(d))
             state = load_state(ws, "hello")
             state["subtasks"] = [st("st-01", "api", "svc", status="done", attempts=1, commit="a" * 40,
-                                    cost={"tokens_in": 0, "tokens_out": 7, "duration_s": 0, "lines_added": 12})]
+                                    cost={"tokens_in": 0, "tokens_out": 7, "duration_s": 0})]
             save_state(ws, "hello", state)
             wf = Path(d) / "wf_1"
             wf.mkdir()
@@ -55,7 +55,7 @@ class Cost(unittest.TestCase):
             self.assertEqual(agents["aaa4"]["tokens_distinct"], agents["aaa4"]["tokens_in"])
             self.assertEqual((agents["aaa3"]["subtask"], agents["aaa4"]["subtask"]), ("st-01", "st-01"))
             cost = state["subtasks"][0]["cost"]
-            self.assertEqual((cost["tokens_in"], cost["tokens_out"], cost["lines_added"]), (220002, 3040, 12))
+            self.assertEqual((cost["tokens_in"], cost["tokens_out"]), (220002, 3040))
             self.assertEqual(cost["duration_s"], 20, "from the agents' own spans when the loop recorded none")
             self.assertEqual(state["wall_time_s"], 190, "first agent start to last agent end inside the run")
             self.assertIn("planner: 1 agents, 200k in (100k distinct), 2k out, 2 turns, 0% locate (claude-opus-5/low)", done.stdout,
@@ -91,6 +91,32 @@ class Cost(unittest.TestCase):
             save_state(ws, "hello", state)
             self.assertEqual(run("cost", "hello", "--transcripts", wf, ws=ws).returncode, 0)
             self.assertIn("total: 6 agents over 2 runs,", done.stdout)
+
+    def test_a_superseded_attempt_is_counted_as_thrown_away(self):
+        with tempfile.TemporaryDirectory() as d:
+            ws = env_workspace(Path(d))
+            state = load_state(ws, "hello")
+            blank = {"tokens_in": 0, "tokens_out": 0, "duration_s": 0}
+            state["subtasks"] = [st("st-01", "api", "svc", status="done", attempts=2, commit="a" * 40, cost=dict(blank)),
+                                 st("st-02", "api", "svc", status="done", attempts=1, commit="b" * 40, cost=dict(blank))]
+            save_state(ws, "hello", state)
+            wf = Path(d) / "wf_1"
+            wf.mkdir()
+            mission = "# Mission %s\nfeature: hello\nworkspace: %s"
+            # st-01 ran twice: a worker, a reviewer that sent it back, then the pair that landed.
+            transcript(wf, "a1", "workflow-subagent", "Workspace root: %s. Run `%s/harness/bin/briefing hello st-01`." % (ws, ws), [(0, 1000, 0, 1)], 0)
+            transcript(wf, "a2", "worker", mission % ("st-01", ws), [(0, 30000, 0, 1)], 1)
+            transcript(wf, "a3", "reviewer", mission % ("st-01", ws), [(0, 20000, 0, 1)], 2)
+            transcript(wf, "a4", "worker", mission % ("st-01", ws), [(0, 7000, 0, 1)], 3)
+            transcript(wf, "a5", "reviewer", mission % ("st-01", ws), [(0, 3000, 0, 1)], 4)
+            transcript(wf, "b1", "worker", mission % ("st-02", ws), [(0, 9000, 0, 1)], 5)
+            done = run("cost", "hello", "--transcripts", wf, ws=ws)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            costs = {s["id"]: s["cost"] for s in load_state(ws, "hello")["subtasks"]}
+            self.assertEqual(costs["st-01"]["tokens_discarded"], 50000,
+                             "the first worker and the reviewer that returned it; the briefing before them is setup")
+            self.assertEqual(costs["st-01"]["tokens_in"], 61000)
+            self.assertEqual(costs["st-02"]["tokens_discarded"], 0, "one attempt throws nothing away")
 
     def test_turns_are_classified_by_what_they_did(self):
         with tempfile.TemporaryDirectory() as d:

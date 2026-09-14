@@ -10,7 +10,7 @@ from harness.env import stop_all
 from harness.ports import is_held
 
 FAKE_SHA = "0123456789abcdef" * 2 + "01234567"
-COST = {"cost": {"tokens_in": 10, "tokens_out": 5, "duration_s": 3, "lines_added": 2}, "attempts": 1, "interruptions": 0}
+COST = {"cost": {"tokens_in": 10, "tokens_out": 5, "duration_s": 3}, "attempts": 1, "interruptions": 0}
 CRIT = [{"kind": "lint"}]
 API = dict(worktree=".worktrees/hello/svc", exit_criteria=CRIT)
 WEB = dict(worktree=".worktrees/hello/web", exit_criteria=CRIT)

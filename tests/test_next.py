@@ -50,7 +50,7 @@ class NextRound(unittest.TestCase):
         state = load_state(self.ws, "hello")
         self.assertEqual([s for s in state["subtasks"] if s["id"] == "st-02"][0]["reason"], "depends on st-01")
         state["subtasks"][2].update(status="done", attempts=1, commit="a" * 40,
-                                    cost={"tokens_in": 0, "tokens_out": 1, "duration_s": 1, "lines_added": 1})
+                                    cost={"tokens_in": 0, "tokens_out": 1, "duration_s": 1})
         save_state(self.ws, "hello", state)
         self.assertEqual(self.next(), {"ready": [], "skipped": [], "pending": 0})
 

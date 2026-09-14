@@ -123,25 +123,53 @@ def record(path, slug, ws):
     return out, (seconds(start) if start else None, seconds(end) if end else None)
 
 
+def discarded(ordered):
+    """The tokens spent on a diff that did not survive (6.2).
+
+    An attempt starts at a worker spawn and runs until the next one, so a retry, a convention return and a respawn
+    each open one. Every attempt but the last was superseded, and what it spent was paid for nothing. `attempts`
+    cannot answer this: a respawn the runtime forced redid landed work and left the count at 1 by rule.
+
+    The spawns before the first worker are the sub-task's own setup, not an attempt, and they are not counted.
+    """
+    attempts, current = [], None
+    for a in ordered:
+        if a["role"] == "worker":
+            if current is not None:
+                attempts.append(current)
+            current = []
+        if current is not None:
+            current.append(a)
+    if current is not None:
+        attempts.append(current)
+    return sum(a["tokens_in"] for spent in attempts[:-1] for a in spent)
+
+
 def cost(ws, slug, dirs=None, out=sys.stdout):
     state = load_state(ws, slug)
     agents = state.setdefault("cost_by_agent", {})
     spans = {}
+    started = {}
     for d in transcript_dirs(dirs):
         for path in sorted(d.glob("agent-*.jsonl")):
             found = record(path, slug, ws)
             if found:
                 agents[path.stem[len("agent-"):]], span = found
                 spans.setdefault(d.name, []).append(span)
+                started[path.stem[len("agent-"):]] = span[0] or 0
     by_id = {s["id"]: s for s in state["subtasks"]}
     for st in by_id.values():
-        mine = [a for a in agents.values() if a.get("subtask") == st["id"]]
+        mine = [a for i, a in agents.items() if a.get("subtask") == st["id"]]
         if not mine:
             continue
-        c = st.setdefault("cost", {"tokens_in": 0, "tokens_out": 0, "duration_s": 0, "lines_added": 0})
+        c = st.setdefault("cost", {"tokens_in": 0, "tokens_out": 0, "duration_s": 0})
         c["tokens_in"] = sum(a["tokens_in"] for a in mine)
         c["tokens_out"] = sum(a["tokens_out"] for a in mine)
         c["duration_s"] = c["duration_s"] or sum(a["duration_s"] for a in mine)
+        # In the order they ran, from the transcripts' own spans: state carries durations, never a clock.
+        ordered = [a for _, a in sorted(((started.get(i, 0), a) for i, a in agents.items()
+                                         if a.get("subtask") == st["id"]), key=lambda pair: pair[0])]
+        c["tokens_discarded"] = discarded(ordered)
     # Wall time is the sum of each run's own span. Measuring from the first agent to the last across runs would
     # bill the hours between a plan and the build launched the next morning.
     wall = 0
