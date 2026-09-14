@@ -53,6 +53,20 @@ class Baseline(unittest.TestCase):
             self.assertEqual(state["frictions"], [])
             self.assertTrue((ws / ".worktrees/hello/svc").exists(), "the suite ran in the feature worktree")
 
+    def test_only_declared_secrets_are_redacted_from_the_suite_output(self):
+        # An env file holds config as well as secrets. Redacting all of it eats version numbers and paths, and the
+        # suite's own failure becomes unreadable at the moment someone has to act on it (9.3).
+        with tempfile.TemporaryDirectory() as d:
+            echo = "echo 'version 1.0.0 built by ci with abcd1234'"
+            ws = env_workspace(Path(d), config=env_config(extra="client_tests: {api: \"%s\"}" % echo))
+            self.addCleanup(stop_all, ws, "hello")
+            (ws / "secrets/api/api.env").write_text("API_KEY=abcd1234\nAPP_VERSION=1.0.0\nBUILT_BY=ci\n")
+            done = run("baseline", "hello", ws=ws)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            log = (ws / ".run/hello/baseline-api.log").read_text()
+            self.assertIn("[REDACTED API_KEY]", log, "the declared secret is redacted")
+            self.assertIn("version 1.0.0 built by ci", log, "undeclared config is not a secret and stays readable")
+
     def test_a_suite_that_fails_without_naming_a_test_blocks_too(self):
         with tempfile.TemporaryDirectory() as d:
             ws = env_workspace(Path(d), config=env_config(extra="client_tests: {api: \"%s\"}" % NAMELESS))

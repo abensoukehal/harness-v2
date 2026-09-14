@@ -66,8 +66,11 @@ def baseline(ws, slug, out=sys.stdout):
     recorded = {}
     for name, command in cfg.get("client_tests", {}).items():
         stack_env = dict(env, **per_stack[name])
+        # The scrubber covers the keys the stack declares, not every key in its env files. Handing it the whole
+        # environment redacts ordinary config — a version number, a path segment — and shreds the suite's output.
+        keys = [k for k in cfg["stacks"][name].get("secrets", []) if k in per_stack[name]]
         logfile = rd / ("baseline-%s.log" % name)
-        proc = spawn(command, stack_dir(ws, cfg, slug, name), stack_env, logfile, list(per_stack[name]))
+        proc = spawn(command, stack_dir(ws, cfg, slug, name), stack_env, logfile, keys)
         try:
             code = proc.wait(timeout=TIMEOUT_S)
         except subprocess.TimeoutExpired:
