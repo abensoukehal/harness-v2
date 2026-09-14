@@ -134,8 +134,8 @@ stacks:
   # mobile, ai: same shape, optional
 
 delivery:
-  base_branch: develop      # branch to start from
-  target_branch: develop    # branch the PR/merge goes to
+  base_branch: develop      # branch to start from: one branch, or one per repo — {api: develop, mobile: main}
+  target_branch: develop    # branch the PR/merge goes to: same two shapes
   branch_prefix: feature/
   mode: branch              # branch | direct_merge
   commit_author:
@@ -562,6 +562,7 @@ One routine, driven by config:
 **Delivery requires something to deliver.** No push, no merge, and `delivered` stays false unless at least one sub-task is done and the branch diff against `base_branch` is non-empty. A run that completed nothing pushed an empty branch, recorded `delivered: true` and reported "done with gaps, open a PR" — a false green produced by counting only *blocked* sub-tasks against success. Skipped counts too: any sub-task not done means the status is `partial` at best, and zero done means `nothing landed`, whatever the reason was. Four statuses, no others: `done`, `done with gaps`, `partial`, `nothing landed`. A status vocabulary with a gap in it is where a false green hides.
 
 - Create `${branch_prefix}<slug>` from `base_branch` at run start.
+- `base_branch` and `target_branch` are one branch for every repo, or a map keyed by repo name. Clients whose repos were not born together do not share a mainline, and a single string makes such a repo unbranchable. A map must name every repo the stacks live in: a repo missing from it has no branch to cut from, which the run would otherwise discover at the worktree.
 - One commit per validated sub-task (section 9.2).
 - At the end of phase 5:
   - `mode: branch` → push the branch, then stop. Ali opens the PR himself and handles the client-side review and merge.
@@ -608,7 +609,7 @@ Phases 4 and 5 need the stacks running. On legacy code a stack can take a minute
 
 Several features can run at once inside one workspace. Two runs must never share a working tree.
 
-- Worktrees are created **per git repository, not per stack**. Several stacks can live in one repo (a monorepo is the common case in legacy clients), and `client.config.yaml` says which repo each stack belongs to via `repo`. One worktree per repo the feature touches: `git -C repos/<repo> worktree add ../../.worktrees/<slug>/<repo> -b <branch_prefix><slug> <base_branch>`. Stack paths resolve inside it.
+- Worktrees are created **per git repository, not per stack**. Several stacks can live in one repo (a monorepo is the common case in legacy clients), and `client.config.yaml` says which repo each stack belongs to via `repo`. One worktree per repo the feature touches: `git -C repos/<repo> worktree add ../../.worktrees/<slug>/<repo> -b <branch_prefix><slug> <that repo's base_branch>`. Stack paths resolve inside it.
 - A monorepo therefore gets one branch and one commit stream for the whole feature, even when the feature spans backend and frontend. Sub-tasks still commit one at a time.
 - The worktree paths, not the checkout paths, are what the run's commands and briefings point to. `state.json` records them.
 - Ports are allocated per feature (already dynamic), so parallel dev servers don't collide.

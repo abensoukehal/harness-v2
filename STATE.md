@@ -34,6 +34,7 @@ planner, test-writer, worker, reviewer, qa, retro. Skills: criteria-runner, visu
 - Cost is two numbers: the per-turn total and the distinct context beside it. Both are in `cost_by_agent`, the by-role line and `cost-log.md`.
 - Every mechanical spawn names `agentType: 'io'`, and commands with no agent between them travel in one batch that names which command refused.
 - `harness/` in a workspace runs the pinned commit only; the retro never moves it.
+- `base_branch` and `target_branch` are one branch for every repo or a map keyed by repo; a map names every repo the stacks live in, and the worktree, the delivery diff, the push and the pre-push hook each resolve the repo they are working in.
 
 ## Known limits
 - Every mechanical step is a subagent that loads the full context; see OPEN_QUESTIONS.md.

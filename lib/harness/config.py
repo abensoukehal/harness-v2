@@ -83,6 +83,13 @@ def create_state(ws, slug, kind):
     return state
 
 
+def branch_of(cfg, key, repo):
+    """base_branch and target_branch are one branch for every repo, or one per repo keyed by repo name (10).
+    A map is checked against the repos the stacks name at validation, so every repo reaching here has an entry."""
+    value = cfg["delivery"][key]
+    return value if isinstance(value, str) else value[repo]
+
+
 def stack_dir(ws, cfg, slug, name):
     """Where a stack lives inside the feature's worktree (11.2): repos/<repo>/x maps to .worktrees/<slug>/<repo>/x."""
     stack = cfg["stacks"][name]

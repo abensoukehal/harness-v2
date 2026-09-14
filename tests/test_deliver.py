@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import env_workspace, run, sh
+from helpers import env_config, env_workspace, run, sh
 from harness.config import load_config, load_state, save_state
 from harness import worktree
 from test_next import st
@@ -40,7 +40,7 @@ class Deliver(unittest.TestCase):
         done = run("deliver", "hello", ws=self.ws)
         self.assertEqual(done.returncode, 1)
         self.assertIn("nothing to deliver: no sub-task is done", done.stderr)
-        self.assertIn("the branch matches main in svc, web", done.stderr)
+        self.assertIn("the branch matches main in svc, main in web", done.stderr)
         state = load_state(self.ws, "hello")
         self.assertIs(state["delivered"], False)
         self.assertIn("delivery · nothing to deliver · no sub-task is done", state["frictions"][0])
@@ -53,7 +53,7 @@ class Deliver(unittest.TestCase):
         done = run("deliver", "hello", ws=self.ws)
         self.assertEqual(done.returncode, 1)
         self.assertNotIn("no sub-task is done", done.stderr)
-        self.assertIn("the branch matches main in svc, web", done.stderr)
+        self.assertIn("the branch matches main in svc, main in web", done.stderr)
         self.assertIs(load_state(self.ws, "hello")["delivered"], False)
 
     def test_one_landed_subtask_delivers_every_worktree(self):
@@ -90,6 +90,57 @@ class Deliver(unittest.TestCase):
                 state["subtasks"][1].pop("reason", None)
             save_state(self.ws, "hello", state)
             self.assertTrue(run("report", "hello", ws=self.ws).stdout.startswith("hello — %s\n" % expected), expected)
+
+
+class PerRepoBranches(unittest.TestCase):
+    """A client whose repos do not share one mainline: svc lives on main, web on trunk (10)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.ws = env_workspace(root)
+        sh("git", "branch", "-m", "main", "trunk", cwd=self.ws / "repos" / "web")
+        config = env_config()
+        for key in ["base_branch", "target_branch"]:
+            config = config.replace("%s: main" % key, "%s: {svc: main, web: trunk}" % key)
+        (self.ws / "product/client.config.yaml").write_text(config)
+        for repo in ["svc", "web"]:
+            bare = root / (repo + ".git")
+            sh("git", "init", "-q", "--bare", str(bare), cwd=root)
+            sh("git", "remote", "add", "origin", str(bare), cwd=self.ws / "repos" / repo)
+
+    def test_each_worktree_is_cut_from_its_own_repo_base(self):
+        cfg, state = load_config(self.ws), load_state(self.ws, "hello")
+        worktree.ensure(self.ws, cfg, "hello", state)
+        for repo, base in [("svc", "main"), ("web", "trunk")]:
+            wt = self.ws / ".worktrees/hello" / repo
+            self.assertEqual(sh("git", "rev-parse", "HEAD", cwd=wt),
+                             sh("git", "rev-parse", base, cwd=self.ws / "repos" / repo), repo)
+
+    def test_an_empty_branch_names_the_base_it_matches_per_repo(self):
+        cfg, state = load_config(self.ws), load_state(self.ws, "hello")
+        worktree.ensure(self.ws, cfg, "hello", state)
+        state["subtasks"] = [st("st-01", "api", "svc", goal="Orders export")]
+        save_state(self.ws, "hello", state)
+        done = run("deliver", "hello", ws=self.ws)
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("the branch matches main in svc, trunk in web", done.stderr)
+
+    def test_delivery_pushes_every_worktree_from_its_own_base(self):
+        cfg, state = load_config(self.ws), load_state(self.ws, "hello")
+        worktree.ensure(self.ws, cfg, "hello", state)
+        wt = self.ws / ".worktrees/hello/web"
+        (wt / "export.js").write_text("export {}\n")
+        sh("git", "add", ".", cwd=wt)
+        sh("git", "-c", "user.email=t@e.com", "-c", "user.name=t", "commit", "-q", "-m", "Add export", cwd=wt)
+        state["subtasks"] = [st("st-01", "web", "web", goal="Export button")]
+        state["subtasks"][0].update(DONE, commit=sh("git", "rev-parse", "HEAD", cwd=wt))
+        save_state(self.ws, "hello", state)
+        done = run("deliver", "hello", ws=self.ws)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(sh("git", "rev-parse", "feature/hello", cwd=Path(self.tmp.name) / "web.git"),
+                         sh("git", "rev-parse", "HEAD", cwd=wt))
 
 
 class Frictions(unittest.TestCase):

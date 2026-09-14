@@ -53,8 +53,8 @@ stacks:
     health_timeout_s: 60
 
 delivery:
-  base_branch: develop
-  target_branch: develop
+  base_branch: develop        # one branch, or one per repo: {frontend: master, backend: develop}
+  target_branch: develop      # same two shapes; a map names every repo the stacks live in
   branch_prefix: feature/
   mode: branch                # branch | direct_merge; branch pushes and stops
   commit_author:

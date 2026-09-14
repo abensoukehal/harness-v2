@@ -50,12 +50,10 @@
       ],
       "properties": {
         "base_branch": {
-          "type": "string",
-          "minLength": 1
+          "$ref": "#/$defs/branch"
         },
         "target_branch": {
-          "type": "string",
-          "minLength": 1
+          "$ref": "#/$defs/branch"
         },
         "branch_prefix": {
           "type": "string",
@@ -232,6 +230,28 @@
     }
   },
   "$defs": {
+    "branch": {
+      "description": "One branch for every repo, or one per repo keyed by the repo name (10).",
+      "oneOf": [
+        {
+          "title": "one branch",
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "title": "a branch per repo",
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "pattern": "^[A-Za-z0-9._-]+$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      ]
+    },
     "command": {
       "type": "string",
       "minLength": 1

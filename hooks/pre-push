@@ -9,13 +9,15 @@ case "$top" in
 esac
 rest=${top##*/.worktrees/}
 slug=${rest%%/*}
+repo=${rest#*/}
 ws=${top%/.worktrees/*}
 config="$ws/product/client.config.yaml"
 state="$ws/product/features/$slug/state.json"
-read -r prefix target mode < <(python3 - "$config" <<'PY'
+read -r prefix target mode < <(python3 - "$config" "$repo" <<'PY'
 import sys, yaml
 d = yaml.safe_load(open(sys.argv[1]))["delivery"]
-print(d["branch_prefix"], d["target_branch"], d["mode"])
+target = d["target_branch"]
+print(d["branch_prefix"], target if isinstance(target, str) else target[sys.argv[2]], d["mode"])
 PY
 ) || { echo "pre-push: cannot read $config" >&2; exit 1; }
 phase=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["phase"])' "$state" 2>/dev/null || echo none)

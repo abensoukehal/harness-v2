@@ -70,6 +70,20 @@ class PrePush(unittest.TestCase):
         self.assertEqual(delivered.returncode, 0, delivered.stderr)
         self.assertEqual(self.remote_main(), sh("git", "rev-parse", "HEAD", cwd=self.wt))
 
+    def test_direct_merge_reads_the_target_of_this_worktree_repo(self):
+        # A branch map: svc merges into main, web into trunk. The hook must resolve the repo it runs in, not the map.
+        config = env_config().replace("mode: branch", "mode: direct_merge")
+        config = config.replace("target_branch: main", "target_branch: {svc: main, web: trunk}")
+        (self.ws / "product/client.config.yaml").write_text(config)
+        self.state["phase"] = "delivery"
+        save_state(self.ws, "hello", self.state)
+        to_trunk = push(self.wt, "origin", "HEAD:trunk")
+        self.assertEqual(to_trunk.returncode, 1)
+        self.assertIn("refused refs/heads/trunk", to_trunk.stderr, "trunk is web's target, not svc's")
+        delivered = push(self.wt, "origin", "HEAD:main")
+        self.assertEqual(delivered.returncode, 0, delivered.stderr)
+        self.assertEqual(self.remote_main(), sh("git", "rev-parse", "HEAD", cwd=self.wt))
+
     def test_plain_checkout_is_not_governed(self):
         repo = self.ws / "repos/svc"
         (repo / "g.py").write_text("2\n")

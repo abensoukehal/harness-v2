@@ -3,7 +3,7 @@ import subprocess
 import sys
 
 from . import HarnessError, git
-from .config import load_config, load_state, save_state
+from .config import branch_of, load_config, load_state, save_state
 
 
 def refusals(ws, cfg, state):
@@ -11,17 +11,17 @@ def refusals(ws, cfg, state):
     why = []
     if not any(s["status"] == "done" for s in state["subtasks"]):
         why.append("no sub-task is done")
-    base = cfg["delivery"]["base_branch"]
     empty = []
     for repo, rel in state["worktrees"].items():
         wt = ws / rel
         if not (wt / ".git").exists():
             why.append("no worktree at %s" % rel)
             continue
+        base = branch_of(cfg, "base_branch", repo)
         if not git("diff", "--name-only", "%s...HEAD" % base, cwd=wt).split():
-            empty.append(repo)
+            empty.append("%s in %s" % (base, repo))
     if empty and len(empty) == len(state["worktrees"]):
-        why.append("the branch matches %s in %s" % (base, ", ".join(sorted(empty))))
+        why.append("the branch matches " + ", ".join(sorted(empty)))
     return why
 
 
@@ -34,9 +34,10 @@ def deliver(ws, slug, out=sys.stdout):
         state["frictions"].append("delivery · nothing to deliver · " + "; ".join(why))
         save_state(ws, slug, state)
         raise HarnessError("nothing to deliver: %s" % "; ".join(why))
-    branch, target = state["branch"], cfg["delivery"]["target_branch"]
+    branch = state["branch"]
     for repo, rel in sorted(state["worktrees"].items()):
         wt = ws / rel
+        target = branch_of(cfg, "target_branch", repo)
         refs = [branch] + (["%s:%s" % (branch, target)] if cfg["delivery"]["mode"] == "direct_merge" else [])
         for ref in refs:
             done = subprocess.run(["git", "push", "origin", ref], cwd=str(wt), capture_output=True, text=True)

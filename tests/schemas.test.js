@@ -129,6 +129,10 @@ rejects("config", "two-stack/client.config.yaml", [
   ["health_timeout_s 0", (c) => (c.stacks.backend.health_timeout_s = 0), /^\/stacks\/backend\/health_timeout_s$/],
   ["PORT ref to a missing stack", (c) => (c.stacks.frontend.commands.dev = "pnpm dev --port ${PORT_MOBILE}"), /^\/stacks\/frontend$/],
   ["delivery mode rebase", (c) => (c.delivery.mode = "rebase"), /^\/delivery\/mode$/],
+  ["a branch map missing a repo", (c) => (c.delivery.base_branch = { frontend: "main" }), /^\/delivery\/base_branch$/],
+  ["a branch map naming a repo no stack lives in", (c) => (c.delivery.target_branch = { frontend: "main", backend: "main", mobile: "main" }), /^\/delivery\/target_branch\/mobile$/],
+  ["a branch map with an empty branch", (c) => (c.delivery.base_branch = { frontend: "", backend: "main" }), /^\/delivery\/base_branch/],
+  ["a branch neither one string nor a map", (c) => (c.delivery.base_branch = 7), /^\/delivery\/base_branch$/],
   ["delivery without commit_author", (c) => delete c.delivery.commit_author, /^\/delivery\/commit_author$/],
   ["commit_author bad email", (c) => (c.delivery.commit_author.email = "not-an-email"), /^\/delivery\/commit_author\/email$/],
   ["a git key at all", (c) => (c.git = { identity_hygiene: "strict" }), /^\/git$/],
@@ -154,6 +158,13 @@ function messageFor(mutate, pathRe) {
   mutate(data);
   return validate(data, "config").errors.find((e) => pathRe.test(e.path))?.message ?? "";
 }
+
+test("a branch per repo is accepted when it names every repo", () => {
+  const cfg = load(fixture("two-stack/client.config.yaml"));
+  cfg.delivery.base_branch = { frontend: "master", backend: "develop" };
+  cfg.delivery.target_branch = { frontend: "master", backend: "develop" };
+  assert.deepEqual(validate(cfg, "config"), { ok: true, pass: "cross-field", errors: [] });
+});
 
 test("an old config is told what replaced each key it still carries", () => {
   assert.match(messageFor((c) => (c.delivery.mode = "pr"), /^\/delivery\/mode$/), /"pr" is now "branch"/);

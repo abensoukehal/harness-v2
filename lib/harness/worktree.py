@@ -2,6 +2,7 @@ import shutil
 import subprocess
 
 from . import HARNESS_ROOT, HarnessError, git
+from .config import branch_of
 
 HOOK = HARNESS_ROOT / "hooks" / "pre-push"
 
@@ -30,8 +31,8 @@ def registered(repo_dir):
 def ensure(ws, cfg, slug, state):
     """One worktree per repo the config names, on the feature branch (11.2). Idempotent."""
     branch = cfg["delivery"]["branch_prefix"] + slug
-    base = cfg["delivery"]["base_branch"]
     for repo in repos_of(cfg):
+        base = branch_of(cfg, "base_branch", repo)
         repo_dir = ws / "repos" / repo
         if not (repo_dir / ".git").exists():
             raise HarnessError("repos/%s is not a git checkout" % repo)

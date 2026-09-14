@@ -2,7 +2,7 @@
 import statistics
 
 from .ask import render
-from .config import feature_dir, load_config, load_state
+from .config import branch_of, feature_dir, load_config, load_state
 from .cost import k, summary
 from .gaps import parse_gaps
 
@@ -119,7 +119,8 @@ def build_report(ws, slug):
     elif cfg["delivery"]["mode"] == "branch":
         lines.append("Open a PR from %s." % state["branch"])
     else:
-        lines.append("%s was merged into %s." % (state["branch"], cfg["delivery"]["target_branch"]))
+        targets = sorted({branch_of(cfg, "target_branch", repo) for repo in state["worktrees"]})
+        lines.append("%s was merged into %s." % (state["branch"], ", ".join(targets)))
     rel = "product/features/%s" % slug
     lines += ["", "Detail: %s/plan.md %s/decisions.md %s/state.json %s/gaps/" % (rel, rel, rel, rel)]
     text = "\n".join(lines) + "\n"
