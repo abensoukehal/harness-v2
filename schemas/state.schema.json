@@ -15,6 +15,7 @@
     "subtasks",
     "decisions",
     "frictions",
+    "interventions",
     "accepted_gaps"
   ],
   "description": "Durations only. No timestamp, date or created/updated field ever lands here.",
@@ -38,16 +39,7 @@
       "minLength": 1
     },
     "phase": {
-      "enum": [
-        "ingestion",
-        "planning",
-        "safety_net",
-        "build",
-        "qa",
-        "delivery",
-        "retro",
-        "finished"
-      ]
+      "$ref": "#/$defs/phase"
     },
     "ports": {
       "type": "object",
@@ -86,6 +78,33 @@
       "type": "array",
       "items": {
         "type": "string"
+      }
+    },
+    "interventions": {
+      "type": "array",
+      "description": "Every time a human had to touch the run (6.2). Ordered by when it happened; no clock lands here.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "phase",
+          "cause",
+          "line"
+        ],
+        "properties": {
+          "phase": {
+            "$ref": "#/$defs/phase"
+          },
+          "cause": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+          },
+          "line": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          }
+        }
       }
     },
     "accepted_gaps": {
@@ -198,24 +217,9 @@
           "turns": {
             "$ref": "#/$defs/count"
           },
-          "turns_by_kind": {
-            "type": "object",
-            "additionalProperties": false,
-            "description": "Turns by what each one did: locate, read, write or other (6.2).",
-            "properties": {
-              "locate": {
-                "$ref": "#/$defs/count"
-              },
-              "read": {
-                "$ref": "#/$defs/count"
-              },
-              "write": {
-                "$ref": "#/$defs/count"
-              },
-              "other": {
-                "$ref": "#/$defs/count"
-              }
-            }
+          "locate_turns": {
+            "$ref": "#/$defs/count",
+            "description": "Turns spent finding ground: a grep, glob or find whose result is paths and line numbers (6.2)."
           },
           "duration_s": {
             "$ref": "#/$defs/count"
@@ -265,6 +269,18 @@
     "sha": {
       "type": "string",
       "pattern": "^[0-9a-f]{7,40}$"
+    },
+    "phase": {
+      "enum": [
+        "ingestion",
+        "planning",
+        "safety_net",
+        "build",
+        "qa",
+        "delivery",
+        "retro",
+        "finished"
+      ]
     },
     "subtaskId": {
       "type": "string",

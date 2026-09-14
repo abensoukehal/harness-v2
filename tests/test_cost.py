@@ -44,7 +44,7 @@ class Cost(unittest.TestCase):
             self.assertEqual(sorted(agents), ["aaa1", "aaa2", "aaa3", "aaa4"], "only agents whose first message names the feature and this workspace")
             self.assertEqual(agents["aaa1"], {"role": "io", "run": "wf_1", "model": "claude-opus-5", "effort": "low",
                                               "tokens_in": 104034, "tokens_distinct": 53034, "tokens_out": 47, "turns": 2,
-                                              "turns_by_kind": {"locate": 0, "read": 0, "write": 0, "other": 2}, "duration_s": 20})
+                                              "locate_turns": 0, "duration_s": 20})
             self.assertEqual(agents["aaa2"]["role"], "planner")
             self.assertEqual(agents["aaa2"]["tokens_in"], 200015)
             # aaa1 and aaa2 each re-read on their second turn what their first turn established: the two numbers part.
@@ -107,7 +107,7 @@ class Cost(unittest.TestCase):
             self.assertEqual(done.returncode, 0, done.stderr)
             agent = load_state(ws, "hello")["cost_by_agent"]["aaa1"]
             self.assertEqual(agent["turns"], 4)
-            self.assertEqual(agent["turns_by_kind"], {"locate": 1, "read": 1, "write": 1, "other": 1},
-                             "the grep turn and the read turn classify differently")
+            self.assertEqual(agent["locate_turns"], 1,
+                             "of the four turns only the grep one located; the read, the write and the text turn did not")
             self.assertIn("worker: 1 agents, 4k in (1k distinct), 40 out, 4 turns, 25% locate", done.stdout)
             self.assertIn("4 turns, 25% locate, ", done.stdout)
