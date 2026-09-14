@@ -63,17 +63,31 @@ class StateTool(unittest.TestCase):
         st = load_state(self.ws, "hello")["subtasks"][0]
         self.assertEqual(st["noted"], "orders carry a soft delete flag the plan does not mention")
         self.assertEqual(st["status"], "running")
+        # A worker with a second thing to say is saying something about its brief, and a silent drop says nothing.
+        self.assertIn("second-observation | 1 | hello", (self.ws / "product/frictions.md").read_text())
 
-    def test_an_observation_carrying_a_path_or_code_is_refused(self):
+    def test_an_observation_out_of_form_is_cut_or_dropped_never_refused(self):
         run("state", "init", "hello", "service", ws=self.ws)
         base = {"id": "st-01", "stack": "backend", "status": "pending", "attempts": 0, "interruptions": 0,
                 "worktree": ".worktrees/hello/backend", "exit_criteria": [{"kind": "lint"}]}
         self.update({"subtasks": [base]})
-        for line in ["the flag lives in app/models/order.py", "the filter calls `soft_deleted`", "two lines\nof it", "x" * 161]:
-            bad = self.update({"subtasks": [{"id": "st-01", "noted": line}]})
-            self.assertEqual(bad.returncode, 1, line)
-            self.assertIn("subtasks/0/noted", bad.stderr, line)
-        self.assertNotIn("noted", load_state(self.ws, "hello")["subtasks"][0])
+        for line in ["the flag lives in app/models/order.py", "the filter calls `soft_deleted`"]:
+            done = self.update({"subtasks": [{"id": "st-01", "status": "running", "noted": line}]})
+            self.assertEqual(done.returncode, 0, done.stderr)
+            st = load_state(self.ws, "hello")["subtasks"][0]
+            self.assertNotIn("noted", st, line)
+            self.assertEqual(st["status"], "running", "the status it rode with lands whatever the prose does")
+        self.assertIn("observation-form", (self.ws / "product/frictions.md").read_text())
+        self.update({"subtasks": [{"id": "st-01", "noted": "two lines\nof it"}]})
+        self.assertEqual(load_state(self.ws, "hello")["subtasks"][0]["noted"], "two lines", "cut at the first newline")
+
+    def test_an_observation_past_the_cap_is_cut_to_it(self):
+        run("state", "init", "hello", "service", ws=self.ws)
+        self.update({"subtasks": [{"id": "st-01", "stack": "backend", "status": "pending", "attempts": 0, "interruptions": 0,
+                                   "worktree": ".worktrees/hello/backend", "exit_criteria": [{"kind": "lint"}]}]})
+        done = self.update({"subtasks": [{"id": "st-01", "noted": "x" * 200}]})
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(load_state(self.ws, "hello")["subtasks"][0]["noted"], "x" * 160)
 
     def test_since_becomes_duration(self):
         run("state", "init", "hello", "service", ws=self.ws)

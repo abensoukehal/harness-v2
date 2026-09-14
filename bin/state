@@ -5,14 +5,27 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
 import json
+import re
 import time
 from harness import HarnessError, check_slug, find_workspace, main
 from harness.config import create_state, load_state, save_state, state_path
+from harness.frictions import record
 
 USAGE = "usage: state init <slug> <kind> | get <slug> | update <slug> <json|->"
+CODE = re.compile(r"[/`]")
 
 
-def merge(state, patch):
+def noted_line(text):
+    """One line, 160 characters, no path and no code (5.5). Sanitised here and never refused: the patch carrying an
+    observation also carries the sub-task's status, and a result that landed code cannot be lost over its prose.
+    A line past the length or past its first newline is cut; a line carrying a path or a backtick is not in the form
+    at all and goes.
+    """
+    line = str(text).split("\n")[0].strip()[:160].strip()
+    return "" if CODE.search(line) else line
+
+
+def merge(state, patch, dropped=None):
     for key, value in patch.items():
         if key == "subtasks":
             by_id = {s["id"]: s for s in state["subtasks"]}
@@ -23,14 +36,20 @@ def merge(state, patch):
                     by_id[item["id"]] = item
                     continue
                 since = item.pop("_since", None)
-                # One observation per sub-task, capped here and not in the prompt (5.5). The second is dropped, never
-                # refused: the patch carrying it also carries the sub-task's status, and losing that loses the work.
-                if "noted" in target:
-                    item.pop("noted", None)
+                # One observation per sub-task, capped here and not in the prompt (5.5). A drop leaves a friction
+                # behind: a worker with a second thing to say is saying something about its brief.
+                if "noted" in item:
+                    line = noted_line(item.pop("noted"))
+                    if not line:
+                        dropped.append("observation-form")
+                    elif "noted" in target:
+                        dropped.append("second-observation")
+                    else:
+                        item["noted"] = line
                 target.update(item)
                 if since is not None:
                     target.setdefault("cost", {})["duration_s"] = max(0, int(time.time()) - int(since))
-        elif key in ("decisions", "frictions"):
+        elif key in ("decisions", "frictions", "interventions"):
             state[key].extend(value)
         else:
             state[key] = value
@@ -54,7 +73,14 @@ def run(argv):
             patch = json.loads(raw)
         except ValueError as e:
             raise HarnessError("patch is not JSON: %s" % e)
-        save_state(ws, slug, merge(load_state(ws, slug), patch))
+        dropped = []
+        save_state(ws, slug, merge(load_state(ws, slug), patch, dropped))
+        for cause in dropped:
+            # The state is already written. A ledger that refuses cannot be allowed to undo a result that landed.
+            try:
+                record(ws, cause, slug)
+            except (HarnessError, OSError):
+                pass
     else:
         raise HarnessError(USAGE)
     print(json.dumps({"now": int(time.time())}))
