@@ -1,3 +1,4 @@
+import json
 import re
 import subprocess
 import tempfile
@@ -14,6 +15,40 @@ def decisions_block(path):
     parts = path.read_text().split("/* decisions:start */")
     assert len(parts) == 2, "%s has no decisions block" % path.name
     return parts[1].split("/* decisions:end */")[0]
+
+
+def literal_keys(text, brace):
+    """The top-level keys of the object literal whose opening brace is at `brace`."""
+    keys, depth, i = [], 0, brace
+    while i < len(text):
+        c = text[i]
+        if c in "{([":
+            depth += 1
+        elif c in "})]":
+            depth -= 1
+            if not depth:
+                return keys
+        elif c in "'\"`":
+            i += 1
+            while i < len(text) and text[i] != c:
+                i += 2 if text[i] == "\\" else 1
+        elif depth == 1:
+            name = re.match(r"([A-Za-z_$][\w$]*)\s*:", text[i:])
+            if name:
+                keys.append(name.group(1))
+                i += name.end() - 1
+        i += 1
+    raise AssertionError("unterminated object literal at %d" % brace)
+
+
+def patch_keys(text):
+    """Every top-level key a script writes into state.json, read off the patch literals themselves."""
+    return {k for m in re.finditer(r"(?:setState\('[a-z-]+', |JSON\.stringify\()\{", text)
+            for k in literal_keys(text, m.end() - 1)}
+
+
+def unknown(keys, properties):
+    return sorted(k for k in keys if k not in properties)
 
 
 BANNED = [r"Date\.now", r"Math\.random", r"new Date\(\)", r"\brequire\(", r"^\s*import\s", r"\bfs\.", r"process\."]
@@ -187,3 +222,38 @@ class Workflows(unittest.TestCase):
             for pattern in BANNED:
                 self.assertIsNone(re.search(pattern, text, re.M), "%s uses %s" % (p.name, pattern))
             self.assertIn("harness/", text)
+
+    def test_every_state_key_a_script_writes_is_in_the_schema(self):
+        """A key only a run reaches: renamed on one side it passes every other test and fails on additionalProperties.
+
+        The scripts are the sole writer of some of what lands in state.json, and nothing here executes them. This
+        reads the patch literals instead, so the two ends of a name are compared without a run.
+        """
+        props = json.loads((ROOT / "schemas/state.schema.json").read_text())["properties"]
+        for p in SCRIPTS:
+            text = p.read_text()
+            self.assertEqual(text.count("${T('state')} update"), 1,
+                             "%s: one write site, and its patches are literals patch_keys can read" % p.name)
+            keys = patch_keys(text)
+            self.assertTrue(keys, "%s: the write site carries no patch literal" % p.name)
+            self.assertEqual(unknown(keys, props), [], "%s writes it and state.json has no such key" % p.name)
+        self.assertIn("legacy_discovery", patch_keys((ROOT / "claude/workflows/harness-plan.js").read_text()),
+                      "the key the plan script alone writes is the one this test exists for")
+        self.assertEqual(unknown({"discovery", "phase"}, props), ["discovery"],
+                         "the rule, driven by the half-rename it catches")
+
+    def test_a_skill_that_writes_state_names_keys_the_schema_has(self):
+        """The third writer of state.json is prose: visual-diff tells the agent to append an accepted gap itself.
+
+        Renamed in the schema, the instruction still reads well and the run fails on it, the same way a script would.
+        A prose write phrased any other way is invisible here, so the count below fixes what this rule sees.
+        """
+        props = json.loads((ROOT / "schemas/state.schema.json").read_text())["properties"]
+        writes = [(m.group(2), [f.strip() for f in m.group(1).split(",")])
+                  for p in sorted((ROOT / "claude").rglob("*.md"))
+                  for m in re.finditer(r"append `\{([^}]*)\}` to `([a-z_]+)` in `state\.json`", p.read_text())]
+        self.assertEqual(len(writes), 1, "the prose writes of state.json this rule reaches: %s" % writes)
+        for key, fields in writes:
+            self.assertEqual(unknown([key], props), [], "a skill appends to %s and state.json has no such key" % key)
+            self.assertEqual(unknown(fields, props[key]["items"]["properties"]), [],
+                             "a skill names it and an item of %s has no such field" % key)

@@ -10,3 +10,11 @@ The runtime refuses a spawn after its agent has already written its files, and t
 
 ## A part of a multi-part instruction can go missing with nothing to notice
 An instruction that arrives in several parts is answered in one report, and a part that never reaches the code leaves no trace in this repo: three changes were asked for in one message, two were built and reported, and the third was found two runs later by a check written for something else. The inventory test covers half of the shape — a measurement that reaches `SPEC.md` and not the schema fails it — and nothing covers a part that never reaches the spec at all. The engine cannot see the instruction, only what the instruction became, so a counter here would count what a human chose to write down. Decide whether the report that answers a multi-part instruction has to enumerate the parts it received, or whether the spec is the only ledger and a part that never reaches it is accepted as lost.
+
+
+## A cloned harness in detached HEAD fails the retro-tree test with git's reason swallowed
+`tests/test_retro_tree.py` builds its fixture with `git push origin HEAD`, which resolves no ref when the checkout it
+clones is detached — the state someone is in when they verify one commit with `git checkout <sha>`. The setup raises a
+bare `CalledProcessError`, so the run reports a failing test and says nothing about why. The test is right on the
+substance and passes on a branch. What wants fixing is the silence, not the push: the setup either skips when
+`git symbolic-ref HEAD` finds no branch, or lets git's stderr through to the failure it prints.

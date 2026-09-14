@@ -262,3 +262,36 @@ test("the retro needs its own clone, and the check passes only on every count", 
   }
   assert.equal(retro.checkPassed(null, false), false);
 });
+
+test("every key a sub-task outcome carries is a key the state schema has", () => {
+  // These reach state.json only through a run: renamed on one side they pass every other test and fail on
+  // additionalProperties at hour two. Driving the decisions is what compares the two ends without a run.
+  const schema = JSON.parse(readFileSync(fileURLToPath(new URL("../schemas/state.schema.json", import.meta.url)), "utf8"));
+  const subtask = schema.$defs.subtask.properties;
+  const src = readFileSync(fileURLToPath(new URL("../claude/workflows/harness-build.js", import.meta.url)), "utf8");
+  const worker = { lines_added: 40, noted: "orders carry a soft delete flag the plan does not mention" };
+  const refused = { commands: [{ name: "briefing", ok: false, error: "no spec" }, { name: "restart", ok: false, error: "port held" }] };
+  const outcomes = [
+    build.briefingFailed(refused),
+    build.restartCapped(4, 3, "api"),
+    build.restartFailed(refused),
+    build.workerOutcome({ status: "needs", report: "two formats", ask: { question: "which?" } }),
+    build.workerOutcome({ status: "failed", last_error: "assert 3 == 2" }),
+    build.workerOutcome({ status: "blocked", reason: "budget", report: "over" }),
+    build.reviewOutcome({ status: "done", commit: "a".repeat(40), lines_added: 38 }, worker),
+    build.reviewOutcome({ status: "done", last_error: "no commit made" }, worker),
+    build.returnCapped(3, "the query belongs in the controller"),
+    build.notedOf(worker),
+    { status: "skipped", reason: "runtime" },                                       // the refusal outcome, written inline
+    { id: "st-01", attempts: 1, cost: { tokens_in: 0, tokens_out: 0, duration_s: 0 } },  // what the loop adds to every item
+  ];
+  const keys = new Set(outcomes.flatMap((o) => Object.keys(o)));
+  for (const name of ["status", "reason", "last_error", "ask", "commit", "noted", "attempts", "cost", "id"]) {
+    assert.ok(keys.has(name), `${name} is not among the keys the decisions produce: ${[...keys].join(", ")}`);
+  }
+  // lines_added is the one key that never lands: the loop destructures it out of the outcome before the patch.
+  assert.match(src, /const \{ lines_added, \.\.\.rest \} = outcome/);
+  keys.delete("lines_added");
+  assert.deepEqual([...keys].filter((k) => !(k in subtask)).sort(), []);
+  assert.deepEqual(["reason_code"].filter((k) => !(k in subtask)), ["reason_code"], "the rule, driven by a key the schema has not");
+});
