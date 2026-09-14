@@ -70,9 +70,21 @@ const workerOutcome = (w) => w.status === 'needs' ? { status: 'blocked', reason:
 const reviewOutcome = (r, w) => (r.status === 'done' && r.commit
   ? { status: 'done', commit: r.commit, lines_added: r.lines_added ?? w.lines_added ?? 0 }
   : { status: 'blocked', reason: 'review', last_error: clip(r.last_error) })
+// The third worker result (5.5): an observation, not a status. The sub-task keeps the status it earned and the
+// criteria run unchanged. One per sub-task, and that cap is bin/state's at the fold, never this script's.
+const notedOf = (worker) => (worker && worker.noted ? { noted: worker.noted } : {})
+// The reviewer answers two questions on one diff (4.4): did the worker work around a test, and does this code belong.
+// The second verdict is binary — one line to fix, or nothing. A blank convention is a pass, not a soft return.
+// Criteria first: `done` is the reviewer's own criteria run coming back green, and a red sub-task is never returned
+// for how it is written, or the worker gets two signals in one turn and cannot tell which to fix first.
+const conventionReturn = (review) => (review && review.status === 'done'
+  ? String(review.convention || '').trim() || null : null)
+// A convention return spends an attempt against the same ceiling. An uncounted loop is an unbounded loop.
+const returnCapped = (spent, reason) => (spent >= 3
+  ? { status: 'blocked', reason: 'convention', last_error: clip(reason) } : null)
 // A refusal spends no attempt: the sub-task keeps the count it had.
-const attemptsOf = (worker, outcome, previous) => (outcome.reason === 'runtime' ? previous
-  : Math.max(1, Math.min(3, (worker && worker.attempts) || 1)))
+const attemptsOf = (worker, outcome, previous, spent = 1) => (outcome.reason === 'runtime' ? previous
+  : Math.max(1, Math.min(3, Math.max((worker && worker.attempts) || 1, spent))))
 const overBudget = (review, lines, budget) => Boolean(review && review.justification && lines > (budget ?? Infinity))
 const landedCount = (state) => state.subtasks.filter((s) => s.status === 'done').length
 const runStatus = (landed, total, delivered, gaps) => !landed ? 'nothing landed'
@@ -128,7 +140,7 @@ const WORKER = {
   type: 'object',
   properties: {
     status: { enum: ['done', 'failed', 'blocked', 'restart', 'needs'] }, report: { type: 'string' }, files: strings, decisions: strings, frictions: strings,
-    attempts: { type: 'integer' }, lines_added: { type: 'integer' }, last_error: { type: 'string' },
+    attempts: { type: 'integer' }, lines_added: { type: 'integer' }, last_error: { type: 'string' }, noted: { type: 'string' },
     reason: { enum: ['oracle', 'budget', 'environment', 'missing_file'] }, stack: { type: 'string' },
     ask: {
       type: 'object',
@@ -146,6 +158,7 @@ const REVIEW = {
   type: 'object',
   properties: {
     status: { enum: ['done', 'blocked', 'restart'] }, commit: { type: 'string' }, lines_added: { type: 'integer' }, justification: { type: 'string' },
+    convention: { type: 'string' },
     last_error: { type: 'string' }, decisions: strings, frictions: strings, report: { type: 'string' },
     stack: { type: 'string' }, reseed: { type: 'boolean' },
   },
@@ -260,6 +273,7 @@ try {
 
   const runSubtask = async (id) => {
     let restarts = 0
+    let spent = 0
     let started = 0
     let mission = ''
     let worker = null
@@ -278,6 +292,7 @@ try {
           mission = resultOf(begun, 'briefing').output
         }
         worker = await spawn(mission, { agentType: 'worker', label: `${id} worker`, phase: 'Build', schema: WORKER, ...A('worker') })
+        spent += 1
         if (!worker) { await refused(`${id} worker`, 'Build'); outcome = { status: 'skipped', reason: 'runtime' }; break }
         if (worker.status === 'restart') {
           const served = await serveRestart(id, worker, ++restarts)
@@ -297,6 +312,14 @@ try {
           continue
         }
         if (!review) { await refused(`${id} review`, 'Build'); outcome = { status: 'skipped', reason: 'runtime' }; break }
+        const returned = conventionReturn(review)
+        if (returned) {
+          const capped = returnCapped(spent, returned)
+          if (capped) { outcome = capped; break }
+          log(`${id} returned for conventions: ${returned}`)
+          mission = `${mission}\n\n# Convention return\nThe criteria are green. ${returned}\nChange what that line asks for and nothing else.`
+          continue
+        }
         outcome = reviewOutcome(review, worker)
         break
       }
@@ -305,7 +328,7 @@ try {
     }
     const tag = (lines) => (lines || []).map((l) => (l.startsWith(id) ? l : `${id} · ${l}`))
     const { lines_added, ...rest } = outcome
-    const item = { id, ...rest, attempts: attemptsOf(worker, outcome, byId()[id].attempts) }
+    const item = { id, ...rest, ...notedOf(worker), attempts: attemptsOf(worker, outcome, byId()[id].attempts, spent) }
     if (outcome.status === 'done') Object.assign(item, { cost: { tokens_in: 0, tokens_out: 0, duration_s: 0, lines_added: outcome.lines_added }, _since: started })
     await runAll(`${id} result`, [setState('result', {
       subtasks: [item],

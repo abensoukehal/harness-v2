@@ -162,6 +162,43 @@ test("a review lands the sub-task only with a commit behind it", () => {
   assert.equal(build.reviewOutcome({ status: "blocked", last_error: "the diff reverses st-01" }, worker).reason, "review");
 });
 
+test("the convention verdict is binary: one line returns the diff, anything else passes", () => {
+  assert.equal(build.conventionReturn({ status: "done", commit: "a".repeat(40) }), null, "no convention is a pass");
+  assert.equal(build.conventionReturn({ status: "done", convention: "" }), null);
+  assert.equal(build.conventionReturn({ status: "done", convention: "   " }), null, "a blank line is a pass, not a soft return");
+  assert.equal(build.conventionReturn({ status: "done", convention: false }), null);
+  assert.equal(build.conventionReturn(null), null);
+  assert.equal(build.conventionReturn({ status: "done", convention: " the query belongs in the controller " }),
+    "the query belongs in the controller");
+});
+
+test("a convention return is dropped while the criteria are red", () => {
+  // The reviewer runs the net and the criteria itself, so anything but done is red and the red is the only signal.
+  for (const status of ["blocked", "restart"]) {
+    assert.equal(build.conventionReturn({ status, convention: "the query belongs in the controller", last_error: "assert 3 == 2" }),
+      null, status);
+  }
+  assert.equal(build.conventionReturn({ status: "done", convention: "the query belongs in the controller" }),
+    "the query belongs in the controller");
+});
+
+test("a convention return spends an attempt and blocks at the ceiling", () => {
+  assert.equal(build.returnCapped(1, "naming"), null);
+  assert.equal(build.returnCapped(2, "naming"), null);
+  assert.deepEqual(build.returnCapped(3, "the query belongs in the controller"),
+    { status: "blocked", reason: "convention", last_error: "the query belongs in the controller" });
+  // The spawns the loop made outrank the worker's own count, so a returned sub-task cannot report one attempt twice.
+  assert.equal(build.attemptsOf({ attempts: 1 }, { status: "done" }, 0, 2), 2);
+  assert.equal(build.attemptsOf({ attempts: 3 }, { status: "done" }, 0, 1), 3);
+  assert.equal(build.attemptsOf({ attempts: 1 }, { status: "skipped", reason: "runtime" }, 1, 3), 1, "a refusal still spends none");
+});
+
+test("an observation rides with the result and only when the worker made one", () => {
+  assert.deepEqual(build.notedOf({ noted: "orders carry a soft delete flag the plan does not mention" }),
+    { noted: "orders carry a soft delete flag the plan does not mention" });
+  for (const worker of [{ noted: "" }, { status: "done" }, null]) assert.deepEqual(build.notedOf(worker), {});
+});
+
 test("a runtime refusal spends no attempt, and a worker's own count is held to three", () => {
   assert.equal(build.attemptsOf({ attempts: 2 }, { status: "skipped", reason: "runtime" }, 1), 1);
   assert.equal(build.attemptsOf({ attempts: 2 }, { status: "blocked", reason: "criteria" }, 1), 2);

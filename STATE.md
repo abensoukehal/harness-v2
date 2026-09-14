@@ -33,6 +33,8 @@ planner, test-writer, worker, reviewer, qa, retro. Skills: criteria-runner, visu
 - `hygiene.sh` fails a commit that puts the instruction corpus past 40,000 characters; the corpus counts the markdown and the prompt text inside the workflow scripts.
 - Cost is two numbers: the per-turn total and the distinct context beside it. Both are in `cost_by_agent`, the by-role line and `cost-log.md`.
 - Every turn is classed locate, read, write or other, and the by-role line prints the turns beside the locate share.
+- A worker returns one observation beside its status: one line, no path, no code, capped at one per sub-task by the fold, and it reaches the end report under assumptions.
+- The reviewer asks whether the code belongs as well as whether it cheats; that return is one line, legal only on a green sub-task, and it spends an attempt.
 - Every mechanical spawn names `agentType: 'io'`, and commands with no agent between them travel in one batch that names which command refused.
 - `harness/` in a workspace runs the pinned commit only; the retro never moves it.
 - `base_branch` and `target_branch` are one branch for every repo or a map keyed by repo; a map names every repo the stacks live in, and the worktree, the delivery diff, the push and the pre-push hook each resolve the repo they are working in.

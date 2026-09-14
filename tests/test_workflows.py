@@ -106,7 +106,7 @@ class Workflows(unittest.TestCase):
             self.assertGreaterEqual(after.count("await spawn("), 2, p.name)
         build = (ROOT / "claude/workflows/harness-build.js").read_text()
         self.assertIn("outcome = { status: 'skipped', reason: 'runtime' }", build)
-        self.assertIn("attempts: attemptsOf(worker, outcome, byId()[id].attempts)", build, "a refusal spends no attempt")
+        self.assertIn("attempts: attemptsOf(worker, outcome, byId()[id].attempts, spent)", build, "a refusal spends no attempt")
 
     def test_commands_with_no_agent_between_them_share_one_spawn(self):
         """An io spawn carries ~52k of context whatever it is asked (6.2), so the count is the only lever there is."""
